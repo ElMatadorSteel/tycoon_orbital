@@ -171,6 +171,25 @@ local function buildCard(definition: ModuleCatalog.ModuleDef)
 		})
 	)
 
+	-- The classic "?" badge: what a module actually does, one tap away.
+	-- A separate top-layer TextButton, not part of the card's own Face --
+	-- Activated only ever fires on the topmost object under the pointer, so
+	-- tapping it can never also select the card underneath.
+	local infoButton = Theme.new("TextButton", {
+		Name = "Info",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -4, 0, 4),
+		Size = UDim2.fromOffset(22, 22),
+		BackgroundColor3 = COLORS.Accent,
+		AutoButtonColor = false,
+		Font = Theme.Font.Display,
+		TextSize = 14,
+		TextColor3 = Color3.new(1, 1, 1),
+		Text = "?",
+		ZIndex = 2,
+	}, { Theme.corner(11), Theme.stroke(nil, Theme.Line.thin) })
+	table.insert(children, infoButton)
+
 	-- The card takes the module's color: this is what makes the grid
 	-- readable at a glance, same as the reference art.
 	local color = ModuleVisuals.colorOf(definition.id) or COLORS.Card
@@ -182,7 +201,7 @@ local function buildCard(definition: ModuleCatalog.ModuleDef)
 		Inner = true,
 	}, children)
 
-	return card, { name = nameLabel, cost = costLabel }
+	return card, { name = nameLabel, cost = costLabel }, infoButton
 end
 
 ----------------------------------------------------------------------
@@ -417,7 +436,7 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 		end
 
 		order += 1
-		local card, labels = buildCard(definition)
+		local card, labels, infoButton = buildCard(definition)
 		card.Root.LayoutOrder = order
 		card.Root.Parent = self._grid
 
@@ -427,6 +446,10 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 			if self.onSelect then
 				self.onSelect(if self._selected == id then nil else id)
 			end
+		end)
+
+		infoButton.Activated:Connect(function()
+			self:_showInfo(definition)
 		end)
 	end
 
@@ -472,6 +495,75 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 		Visible = false,
 		Parent = parent,
 	}, { self._activeBadge, self._activeName, self._activeHint })
+
+	----------------------------------------------------------------------
+	-- Info popup: shown by a card's "?" badge, describing what that module
+	-- actually does. Reuses the Active band's screen position -- the two
+	-- are mutually exclusive by construction (Active only shows once the
+	-- menu is closed; this only shows while it's open).
+
+	local INFO_WIDTH = 480
+
+	self._infoTitle = Theme.body({
+		Position = UDim2.fromOffset(SPACE.md, SPACE.sm),
+		-- Leaves room on the right for the close button, so a long name
+		-- never runs under it.
+		Size = UDim2.new(1, -(SPACE.md * 2 + 24), 0, 20),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Text = "",
+	})
+
+	self._infoText = Theme.prose({
+		Position = UDim2.fromOffset(SPACE.md, SPACE.sm + 22),
+		Size = UDim2.new(1, -SPACE.md * 2, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		TextWrapped = true,
+		Text = "",
+	})
+
+	-- Discreet: no background, dim white -- it reads as "close" without
+	-- competing with the module name for attention.
+	self._infoClose = Theme.new("TextButton", {
+		Name = "Close",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -SPACE.sm, 0, SPACE.sm),
+		Size = UDim2.fromOffset(20, 20),
+		BackgroundTransparency = 1,
+		AutoButtonColor = false,
+		Font = Theme.Font.Display,
+		TextSize = 18,
+		TextColor3 = Color3.new(1, 1, 1),
+		TextTransparency = 0.4,
+		Text = "×",
+	})
+
+	self._info = Theme.panel({
+		Name = "Info",
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -SPACE.xl),
+		Size = UDim2.fromOffset(INFO_WIDTH, SPACE.sm + 22 + SPACE.sm),
+		BackgroundColor3 = COLORS.PanelDeep,
+		Radius = Theme.Radius.lg,
+		Visible = false,
+		ZIndex = 8,
+		Parent = parent,
+	}, { self._infoTitle, self._infoText, self._infoClose })
+
+	-- infoText's own AutomaticSize.Y keeps its AbsoluteSize accurate for
+	-- whatever text is currently set; this is what keeps the popup itself
+	-- exactly as tall as that text, never a fixed box with empty space
+	-- (a short description) or clipped text (a long one).
+	self._infoText:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		self._info.Size =
+			UDim2.fromOffset(INFO_WIDTH, SPACE.sm + 22 + self._infoText.AbsoluteSize.Y + SPACE.sm)
+	end)
+
+	self._infoClose.Activated:Connect(function()
+		self._info.Visible = false
+		self._infoOpenId = nil
+	end)
 
 	----------------------------------------------------------------------
 	-- Ephemeral toast
@@ -560,9 +652,25 @@ function BuildPanel:Close()
 	self._open = false
 	self._scrim.Visible = false
 	self._panel.Visible = false
+	self._info.Visible = false
+	self._infoOpenId = nil
 	if self.onOpenChanged then
 		self.onOpenChanged(false)
 	end
+end
+
+-- Toggles the info popup for one module's "?" badge: tapping the same
+-- badge again closes it, tapping a different one just swaps the text.
+function BuildPanel:_showInfo(definition: ModuleCatalog.ModuleDef)
+	if self._infoOpenId == definition.id then
+		self._info.Visible = false
+		self._infoOpenId = nil
+		return
+	end
+	self._infoOpenId = definition.id
+	self._infoTitle.Text = definition.name
+	self._infoText.Text = definition.description
+	self._info.Visible = true
 end
 
 function BuildPanel:Toggle()
