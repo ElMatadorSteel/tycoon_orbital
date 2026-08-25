@@ -444,6 +444,41 @@ something to "fix" later — don't recreate a `Shared/Config/` folder.
   pattern for any new cross-service require; a bare relative string will build, pass every Lune
   spec, and then fail only in the live engine.**
 
+**Post-cutover fixes (found by actually playing the live-synced place, not by Lune):**
+- **The starting core had grid DATA but no 3D Instance.** `Placement.initial()` (and therefore
+  `InMemoryStationRepository:load()`) always includes the core in `station.occupancy`/
+  `station.placements`, but nothing ever told `StationSceneBuilder` to build its Model —
+  `EmbarkStation` only ever called `claimPlot` (the deck/rim/keel/wings structure), never
+  `placeModule` for the core. The core was therefore correctly load-bearing for every
+  adjacency/occupancy check, just invisible. Fixed by having `StationSceneBuilder:claimPlot`
+  build the core's Instance itself, in the same step it builds the plot structure — matching
+  legacy `StationService:EnsureStation`, which did both atomically.
+- **The HUD's module counter counted the station's `StationSpawn` as a module,** because
+  `StationSceneBuilder` parents it into the same folder as the modules. Surfaced the moment the
+  core fix above added a second child to count. Fixed by counting only `Model` instances in
+  `HudController`'s `refreshModuleCount`.
+- **The big one: a player's built station never survived a server restart.** `profile.modules`
+  was written correctly on every place/remove/upgrade (`StationProfileSync.apply`, DataStore-saved
+  by the profile use cases) but never READ back — there was no code path that turned a saved
+  profile back into a live station. Since station DATA is intentionally memory-only (see
+  `InMemoryStationRepository`'s header — this was never meant to change), this meant EVERY server
+  restart reset every player's station down to just the core, credits and objective progress
+  notwithstanding. This is not a Studio-testing artifact: it reproduces identically for real
+  players any time their server instance cycles (not only on a game update — Roblox recycles
+  server instances on its own). `PlaceModule.luau`'s own header comment had flagged this as
+  deferred ("a separate RestoreStation-style use case, not this one") back when `PlaceModule` was
+  first ported, and `Placement.canPlace`'s `free` parameter existed for exactly this purpose from
+  the start — neither was ever finished. Fixed by adding
+  `Server/Application/UseCases/RestoreStation.luau`: on `EmbarkStation`, once per session (gated
+  by a new `SessionRegistry:hasRestored`, mirroring `hasEmbarked` — re-embarking after a lobby
+  trip must not replay the save on top of a station the player already has), it loads
+  `profile.modules` (via the new inverse mapping `StationProfileSync.restore`, undoing `apply`'s
+  id/x/y/r/lv rename), and replays every entry except the core (already placed by `claimPlot`)
+  through `Placement.canPlace(..., free = true)` — skipping, not crashing on, any entry that no
+  longer fits (a corrupted save, or a module retired from the catalogue since) — into both the
+  in-memory station and `sceneBuilder:placeModule`. 6 new Lune specs
+  (`tests/specs/application/restore_station.spec.luau`), 134 total, all green.
+
 **Not done yet:** nothing migration-related. `ReplicatedStorage.Remotes` (orphaned legacy remotes
 folder) and `Workspace.Script` (an unrelated pre-existing placeholder) are cosmetic leftovers, not
 blockers — see Stage 8's last bullet. From here on, treat this as an ordinary, already-migrated

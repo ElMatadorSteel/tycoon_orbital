@@ -42,4 +42,21 @@ function StationProfileSync.apply(profile: any, placements: { ModulePlacement })
 	profile.modules = modules
 end
 
+-- The inverse of apply(): turns saved profile modules back into
+-- ModulePlacements, for RestoreStation to replay. The field rename undone
+-- in the one place it was done, same reasoning as apply()'s header.
+function StationProfileSync.restore(modules: { any }): { ModulePlacement }
+	local placements = table.create(#modules)
+	for _, saved in modules do
+		table.insert(placements, {
+			id = saved.id,
+			x = saved.x,
+			y = saved.y,
+			rotation = saved.r,
+			level = saved.lv,
+		})
+	end
+	return placements
+end
+
 return StationProfileSync

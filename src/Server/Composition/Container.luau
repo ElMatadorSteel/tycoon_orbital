@@ -33,6 +33,7 @@ local AddCredits = require("../Application/UseCases/AddCredits")
 local PlaceModule = require("../Application/UseCases/PlaceModule")
 local RemoveModule = require("../Application/UseCases/RemoveModule")
 local UpgradeModule = require("../Application/UseCases/UpgradeModule")
+local RestoreStation = require("../Application/UseCases/RestoreStation")
 local EmbarkStation = require("../Application/UseCases/EmbarkStation")
 local ReturnToLobby = require("../Application/UseCases/ReturnToLobby")
 local RunProductionTick = require("../Application/UseCases/RunProductionTick")
@@ -69,6 +70,7 @@ export type Container = {
 		placeModule: any,
 		removeModule: any,
 		upgradeModule: any,
+		restoreStation: any,
 		embarkStation: any,
 		returnToLobby: any,
 		runProductionTick: any,
@@ -88,6 +90,16 @@ function Container.new(options: { ports: Ports, rules: Rules, sessionRegistry: a
 	local ports = options.ports
 	local rules = options.rules
 	local sessionRegistry = options.sessionRegistry
+
+	-- Built separately, ahead of the table below: embarkStation depends on
+	-- this exact instance (not a fresh one), since it's the one whose
+	-- SessionRegistry-gated call must actually run.
+	local restoreStation = setmetatable({
+		profileRepository = ports.profileRepository,
+		stationRepository = ports.stationRepository,
+		sceneBuilder = ports.sceneBuilder,
+		gridRules = rules.grid,
+	}, RestoreStation)
 
 	-- Each use case gets its OWN dependency table, built fresh here rather
 	-- than cloned from one shared bag: what matters is that no two use
@@ -133,11 +145,14 @@ function Container.new(options: { ports: Ports, rules: Rules, sessionRegistry: a
 			upgradeRules = rules.upgrade,
 		}, UpgradeModule),
 
+		restoreStation = restoreStation,
+
 		embarkStation = setmetatable({
 			sessionRegistry = sessionRegistry,
 			statsPublisher = ports.statsPublisher,
 			sceneBuilder = ports.sceneBuilder,
 			teleporter = ports.teleporter,
+			restoreStation = restoreStation,
 		}, EmbarkStation),
 
 		returnToLobby = setmetatable({

@@ -32,6 +32,7 @@ export type Dependencies = {
 	statsPublisher: any, -- Ports.StatsPublisher
 	sceneBuilder: any, -- Ports.SceneBuilder
 	teleporter: any, -- Ports.Teleporter
+	restoreStation: any, -- Application.UseCases.RestoreStation
 }
 
 local EmbarkStation = {}
@@ -41,6 +42,14 @@ function EmbarkStation:run(userId: number): Result<nil, string>
 	local claimed = self.sceneBuilder:claimPlot(userId)
 	if not claimed then
 		return Result.err("every station is occupied")
+	end
+
+	-- Only once per session: claimPlot's early-return path (re-embarking
+	-- after a trip to the lobby) must not replay the save on top of a
+	-- station the player already has.
+	if not self.sessionRegistry:hasRestored(userId) then
+		self.restoreStation:run(userId)
+		self.sessionRegistry:setRestored(userId, true)
 	end
 
 	self.sessionRegistry:setEmbarked(userId, true)

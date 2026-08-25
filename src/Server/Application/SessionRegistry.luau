@@ -5,7 +5,7 @@
 -- alternative implementation to ever swap in, so the Composition root just
 -- builds one directly.
 --
--- Two things live here so far:
+-- Three things live here so far:
 --   - production: the fractional energy charge and pending credit a tick
 --     carries over to the next one (ported from ProductionService's
 --     private _charge/_pending tables).
@@ -16,6 +16,13 @@
 --     profile.objective already past "Embark" still has to press E again
 --     -- this is exactly session state, not something profile.objective
 --     already encodes.
+--   - restored: whether RestoreStation has already replayed this player's
+--     saved modules THIS SESSION. Station data is memory-only (see
+--     Ports.StationRepository's header) and gets rebuilt from scratch --
+--     just the core -- every time claimPlot runs; without this flag,
+--     re-embarking after a trip to the lobby (claimPlot's early-return
+--     path, not a fresh claim) would replay the save a second time on top
+--     of the station the player already has, duplicating every module.
 
 export type ProductionState = { charge: number, pendingCredit: number }
 
@@ -26,6 +33,7 @@ function SessionRegistry.new()
 	return setmetatable({
 		_production = {} :: { [number]: ProductionState },
 		_embarked = {} :: { [number]: boolean },
+		_restored = {} :: { [number]: boolean },
 	}, SessionRegistry)
 end
 
@@ -47,11 +55,20 @@ function SessionRegistry:setEmbarked(userId: number, value: boolean)
 	self._embarked[userId] = value
 end
 
+function SessionRegistry:hasRestored(userId: number): boolean
+	return self._restored[userId] == true
+end
+
+function SessionRegistry:setRestored(userId: number, value: boolean)
+	self._restored[userId] = value
+end
+
 -- Call on PlayerRemoving, once this is wired into a real bootstrap: nothing
 -- here should outlive the connection it belongs to.
 function SessionRegistry:release(userId: number)
 	self._production[userId] = nil
 	self._embarked[userId] = nil
+	self._restored[userId] = nil
 end
 
 return SessionRegistry
