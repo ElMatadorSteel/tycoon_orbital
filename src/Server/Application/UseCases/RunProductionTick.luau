@@ -25,12 +25,14 @@ end
 
 local Orbit = require(fromShared("Domain/Production/Orbit"))
 local Simulation = require(fromShared("Domain/Production/Simulation"))
+local ModuleCatalog = require(fromShared("Domain/Station/ModuleCatalog"))
 local Credits = require(fromShared("Domain/Economy/Credits"))
 local Snapshot = require("../Snapshot")
 
 type OrbitRules = Orbit.Rules
 type HeatRules = Simulation.HeatRules
 type ResourceValues = Simulation.ResourceValues
+type UpgradeRules = ModuleCatalog.UpgradeRules
 
 export type Dependencies = {
 	profileRepository: any, -- Ports.ProfileRepository
@@ -41,6 +43,7 @@ export type Dependencies = {
 	orbitRules: OrbitRules,
 	heatRules: HeatRules,
 	resourceValues: ResourceValues,
+	upgradeRules: UpgradeRules,
 }
 
 export type TickStats = {
@@ -68,6 +71,7 @@ function RunProductionTick:run(userId: number, deltaTime: number): TickStats
 		pendingCredit = state.pendingCredit,
 		heatRules = self.heatRules,
 		resourceValues = self.resourceValues,
+		upgradeRules = self.upgradeRules,
 	})
 
 	state.charge = result.charge
@@ -76,7 +80,19 @@ function RunProductionTick:run(userId: number, deltaTime: number): TickStats
 	if result.wholeRevenue > 0 then
 		local profile = self.profileRepository:load(userId)
 		profile.credits = Credits.add(profile.credits, result.wholeRevenue)
-		self.profileRepository:save(userId, profile)
+		-- Deliberately NOT profileRepository:save() here. A busy factory
+		-- earns whole revenue on nearly every tick (every ~0.5s), and a real
+		-- DataStore write is rate-limited -- calling it this often floods the
+		-- write queue for this key, and every OTHER action that also needs
+		-- to save (SpendCredits, PlaceModule, UpgradeModule, ...) then queues
+		-- behind it, surfacing as multi-second delays on things a player
+		-- just clicked. The mutation above is enough on its own: every
+		-- ProfileRepository caches by reference (see
+		-- DataStoreProfileRepository's header), so this change is visible to
+		-- every other use case's next load() immediately, with or without an
+		-- explicit save. Durability past that is Bootstrap's periodic
+		-- autosave loop and the PlayerRemoving save, same as every other
+		-- mutation already covers for the moment a session actually ends.
 		self.statsPublisher:publish(userId, Snapshot.credits(profile.credits))
 	end
 

@@ -194,9 +194,11 @@ function Bootstrap.start()
 
 	Players.PlayerRemoving:Connect(function(player: Player)
 		local userId = player.UserId
-		-- Every mutation already saves immediately (see e.g.
-		-- PlaceModule/SpendCredits) -- this re-save is a safety net, not the
-		-- only write, unlike the legacy SaveService's 3-moments-only design.
+		-- Most mutations already save immediately (PlaceModule, SpendCredits,
+		-- UpgradeModule, ...) -- this re-save is their safety net. It is the
+		-- ONLY write for whatever production-tick revenue accrued since the
+		-- last periodic autosave below, so it is load-bearing here in a way
+		-- it isn't for the others.
 		profileRepository:save(userId, profileRepository:load(userId))
 		profileRepository:release(userId)
 		stationRepository:release(userId)
@@ -218,6 +220,29 @@ function Bootstrap.start()
 				end)
 				if not ok then
 					warn(`[Bootstrap] tick failed for {player.Name}: {err}`)
+				end
+			end
+		end
+	end)
+
+	-- Periodic autosave -- ported from the legacy SaveService's third moment
+	-- (the other two are PlayerRemoving above and every other use case's own
+	-- immediate save). RunProductionTick deliberately does NOT save on its
+	-- own (see its own header): a busy factory earns whole revenue on nearly
+	-- every tick, and saving that often floods this key's real DataStore
+	-- write budget, which then queues up and delays every OTHER action
+	-- (upgrading, building, ...) that also needs to save. This loop is what
+	-- actually persists accrued tick revenue, just on a sane cadence.
+	task.spawn(function()
+		while true do
+			task.wait(Balance.Save.AutosaveInterval)
+			for _, player in Players:GetPlayers() do
+				local userId = player.UserId
+				local ok, err = pcall(function()
+					profileRepository:save(userId, profileRepository:load(userId))
+				end)
+				if not ok then
+					warn(`[Bootstrap] autosave failed for {player.Name}: {err}`)
 				end
 			end
 		end

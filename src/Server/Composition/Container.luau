@@ -169,6 +169,7 @@ function Container.new(options: { ports: Ports, rules: Rules, sessionRegistry: a
 			orbitRules = rules.orbit,
 			heatRules = rules.heat,
 			resourceValues = rules.resourceValues,
+			upgradeRules = rules.upgrade,
 		}, RunProductionTick),
 
 		checkObjectiveProgress = setmetatable({

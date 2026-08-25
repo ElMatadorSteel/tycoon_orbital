@@ -143,17 +143,16 @@ function HudController:Start()
 	local feed = GainFeed.new(gui)
 
 	-- The station's module count replicates as ordinary Instances (see
-	-- CLAUDE.md's Stage 5 notes), so it's counted straight off
-	-- workspace.Stations rather than through a snapshot field. Counting only
+	-- CLAUDE.md's Stage 5 notes), so it's counted straight off the player's
+	-- own station folder rather than through a snapshot field. Counting only
 	-- Models excludes the station's StationSpawn, which StationSceneBuilder
 	-- parents into the same folder as the modules.
+	local ownFolder: Folder? = nil
+
 	local function refreshModuleCount()
-		local player = Players.LocalPlayer
-		local stations = workspace:FindFirstChild("Stations")
-		local folder = stations and stations:FindFirstChild(`Station_{player.UserId}`)
 		local count = 0
-		if folder then
-			for _, child in folder:GetChildren() do
+		if ownFolder then
+			for _, child in ownFolder:GetChildren() do
 				if child:IsA("Model") then
 					count += 1
 				end
@@ -162,11 +161,33 @@ function HudController:Start()
 		modules.Text = if count <= 1 then `{count} module` else `{count} modules`
 	end
 
+	-- Bound once, then kept correct by folder.ChildAdded/Removed below --
+	-- not by re-scanning on every Location change. A snapshot taken right
+	-- when Location flips to "Station" can race a big batch of module
+	-- Instances still replicating in (RestoreStation replaying a large
+	-- saved station, in particular), and a later placement while already on
+	-- the station would never have been counted at all: nothing was
+	-- listening to this folder's OWN children before.
+	local function bindOwnStation()
+		if ownFolder then
+			return
+		end
+		local stations = workspace:FindFirstChild("Stations")
+		local folder = stations and stations:FindFirstChild(`Station_{Players.LocalPlayer.UserId}`)
+		if not folder then
+			return
+		end
+		ownFolder = folder
+		refreshModuleCount()
+		folder.ChildAdded:Connect(refreshModuleCount)
+		folder.ChildRemoved:Connect(refreshModuleCount)
+	end
+
 	State.Changed:Connect(function(key: string, value: any)
 		if key == "Location" then
 			setOnStation(value == "Station")
 			if value == "Station" then
-				refreshModuleCount()
+				bindOwnStation()
 			end
 		elseif key == "Credits" then
 			local amount = value :: number
@@ -204,17 +225,19 @@ function HudController:Start()
 		end
 	end)
 
+	-- Covers the case where Location already reads "Station" (e.g. this
+	-- controller starting after the attribute already replicated) but the
+	-- own folder doesn't exist client-side yet: bind as soon as it appears.
 	local stations = workspace:WaitForChild("Stations")
 	stations.ChildAdded:Connect(function()
 		if State.get("Location") == "Station" then
-			refreshModuleCount()
+			bindOwnStation()
 		end
 	end)
-	stations.ChildRemoved:Connect(function()
-		if State.get("Location") == "Station" then
-			refreshModuleCount()
-		end
-	end)
+
+	if State.get("Location") == "Station" then
+		bindOwnStation()
+	end
 end
 
 return HudController

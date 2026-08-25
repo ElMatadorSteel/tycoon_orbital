@@ -38,6 +38,7 @@ export type StepParams = {
 	pendingCredit: number,
 	heatRules: HeatRules,
 	resourceValues: ResourceValues,
+	upgradeRules: ModuleCatalog.UpgradeRules,
 }
 
 export type PowerStats =
@@ -97,23 +98,29 @@ function Simulation.step(params: StepParams): StepResult
 			continue
 		end
 
+		-- A level only ever increases what a module PRODUCES, never what it
+		-- consumes (Balance.Upgrade's own rule) -- so this multiplies power
+		-- only in the producing branch, never heat or the consuming branch,
+		-- below.
+		local boost = ModuleCatalog.levelMultiplier(placement.level, params.upgradeRules)
+
 		if definition.power > 0 then
 			-- Only solar panels depend on the sun; the core always runs.
-			production += definition.power * (if placement.id == "SolarPanel"
+			production += definition.power * boost * (if placement.id == "SolarPanel"
 				then params.sunlight
 				else 1)
 		else
 			consumption -= definition.power
 		end
 
-		storage += definition.capacity or 0
+		storage += (definition.capacity or 0) * boost
 		heatLoad += math.max(0, definition.heat)
 
 		if definition.needsClearance then
 			heatCapacity += params.heatRules.capacityPerRadiator * radiatorClearance(
 				station,
 				placement
-			)
+			) * boost
 		end
 	end
 
@@ -154,14 +161,16 @@ function Simulation.step(params: StepParams): StepResult
 			if not definition or not definition.rate then
 				continue
 			end
+			local rate = definition.rate
+				* ModuleCatalog.levelMultiplier(placement.level, params.upgradeRules)
 			if placement.id == "OreCollector" then
-				oreRate += definition.rate
+				oreRate += rate
 			elseif placement.id == "Smelter" then
-				smeltRate += definition.rate
+				smeltRate += rate
 			elseif placement.id == "Fabricator" then
-				fabRate += definition.rate
+				fabRate += rate
 			elseif placement.id == "CargoBay" then
-				shipRate += definition.rate
+				shipRate += rate
 			end
 		end
 

@@ -498,6 +498,51 @@ end
 
 ----------------------------------------------------------------------
 -- Demolition highlight
+--
+-- Deliberately NOT the ground-plane math _cellUnderMouse() uses for the
+-- placement ghost: that projects the mouse ray onto the deck's plane,
+-- which is exactly right for picking an empty cell (there's nothing to
+-- intersect yet) but wrong for picking an EXISTING module with real
+-- height -- what's visually under the cursor (the side or top of a tall
+-- Fabricator, say) lands on a different deck cell than what's actually on
+-- screen, worse the taller the module and the more oblique the camera
+-- angle. A real raycast against the placed Instances themselves always
+-- matches what the player is actually looking at, at any height.
+local MAX_HOVER_DISTANCE = 1000
+
+function BuildController:_hoveredEntry(): Entry?
+	local folder = self._folder
+	if not folder then
+		return nil
+	end
+
+	local mouse = UserInputService:GetMouseLocation()
+	local ray = getCamera():ViewportPointToRay(mouse.X, mouse.Y)
+
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Include
+	params.FilterDescendantsInstances = { folder }
+
+	local result = workspace:Raycast(ray.Origin, ray.Direction * MAX_HOVER_DISTANCE, params)
+	if not result then
+		return nil
+	end
+
+	-- Only a direct child of the station folder is a real placed module --
+	-- excludes the StationSpawn part sitting in the same folder.
+	local model = result.Instance:FindFirstAncestorWhichIsA("Model")
+	if not model or model.Parent ~= folder then
+		return nil
+	end
+
+	local x = model:GetAttribute("X")
+	local y = model:GetAttribute("Y")
+	if typeof(x) ~= "number" or typeof(y) ~= "number" then
+		return nil
+	end
+
+	return self._occupancy[Grid.key(x, y)]
+end
 
 function BuildController:_destroyHighlight()
 	if self._highlight then
@@ -513,8 +558,7 @@ function BuildController:_updateHighlight()
 		return
 	end
 
-	local cell = self:_cellUnderMouse()
-	local entry: Entry? = if cell then self._occupancy[Grid.key(cell.x, cell.y)] else nil
+	local entry = self:_hoveredEntry()
 	local definition = if entry then ModuleCatalog.get(entry.id) else nil
 	if not (entry and definition) then
 		self:_destroyHighlight()

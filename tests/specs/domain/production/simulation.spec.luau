@@ -23,6 +23,9 @@ end
 local HEAT_RULES = { baseCapacity = 40, capacityPerRadiator = 60, overheatPenalty = 0.5 }
 local LOW_HEAT_RULES = { baseCapacity = 20, capacityPerRadiator = 60, overheatPenalty = 0.5 }
 local RESOURCE_VALUES = { Ore = 5, Alloy = 22, Component = 75 }
+-- gainPerLevel = 0.5: a level-2 module's levelMultiplier is 1.5, a
+-- level-3's is 2 -- clean numbers to check the boost against by hand.
+local UPGRADE_RULES = { maxLevel = 5, gainPerLevel = 0.5, costFactor = 2, minCost = 100 }
 
 local function baseParams(overrides: { [string]: any }?)
 	local params = {
@@ -33,6 +36,7 @@ local function baseParams(overrides: { [string]: any }?)
 		pendingCredit = 0,
 		heatRules = HEAT_RULES,
 		resourceValues = RESOURCE_VALUES,
+		upgradeRules = UPGRADE_RULES,
 	}
 	if overrides then
 		for key, value in overrides do
@@ -152,5 +156,59 @@ describe("Simulation.step -- resource flow", function()
 		}))
 		expect(result.wholeRevenue).toBe(0)
 		expect(result.pendingCredit).toBeNear(0.5)
+	end)
+end)
+
+-- Regression coverage for a real bug: ModuleCatalog.levelMultiplier existed
+-- but nothing ever called it, so upgrading a module raised its level (and
+-- its cost) without changing a single simulated number. Balance.Upgrade's
+-- own rule is "a level only ever increases what a module PRODUCES, never
+-- what it consumes" -- these pin both halves of that.
+describe("Simulation.step -- module levels", function()
+	it("a higher-level solar panel produces more power", function()
+		local station = emptyStation()
+		place(station, "Core", -1, -1) -- +20, level 1
+		local panel = place(station, "SolarPanel", 1, -1) -- base +12
+		panel.level = 2 -- multiplier 1.5 under UPGRADE_RULES
+		local result = Simulation.step(baseParams({ station = station }))
+		expect(result.power.production).toBe(20 + 12 * 1.5)
+	end)
+
+	it("a higher-level battery stores more", function()
+		local station = emptyStation()
+		local battery = place(station, "Battery", -1, -1) -- base capacity 120
+		battery.level = 2
+		local result = Simulation.step(baseParams({ station = station }))
+		expect(result.power.storage).toBe(120 * 1.5)
+	end)
+
+	it("a higher-level radiator dissipates more heat", function()
+		local station = emptyStation()
+		local radiator = place(station, "Radiator", -1, -1) -- fully isolated -> full clearance
+		radiator.level = 2
+		local result = Simulation.step(baseParams({ station = station }))
+		-- baseCapacity 40 + capacityPerRadiator 60 * clearance 1 * boost 1.5
+		expect(result.heat.capacity).toBe(40 + 60 * 1.5)
+	end)
+
+	it("a higher-level ore collector and cargo bay raise revenue", function()
+		local station = emptyStation()
+		place(station, "Core", -1, -1)
+		local collector = place(station, "OreCollector", 1, -1) -- base rate 1
+		collector.level = 3 -- multiplier 2
+		place(station, "CargoBay", 1, 1) -- base rate 4, level 1 -> still 4, no throttle
+		local result = Simulation.step(baseParams({ station = station, charge = 1000 }))
+		-- 1 * 2 units/s * value 5
+		expect(result.income).toBeNear(10)
+	end)
+
+	it("does not scale what a module consumes, only what it produces", function()
+		local station = emptyStation()
+		place(station, "Core", -1, -1) -- heat 2, level 1
+		local smelter = place(station, "Smelter", 1, -1) -- power -14, heat 14
+		smelter.level = 3 -- multiplier 2, but consumption/heat must stay fixed
+		local result = Simulation.step(baseParams({ station = station, charge = 1000 }))
+		expect(result.power.consumption).toBe(14)
+		expect(result.heat.load).toBe(2 + 14)
 	end)
 end)

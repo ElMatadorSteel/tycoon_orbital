@@ -38,6 +38,40 @@ describe("RestoreStation", function()
 		expect(#sceneBuilder.placeCalls).toBe(0)
 	end)
 
+	it(
+		"restores the core's saved level -- claimPlot always starts it at 1, but it's upgradable",
+		function()
+			local profile = profileRepository:load(userId)
+			profile.modules = { { id = "Core", x = -1, y = -1, r = 0, lv = 3 } }
+			profileRepository:save(userId, profile)
+
+			restoreStation:run(userId)
+
+			local station = stationRepository:load(userId)
+			expect(#station.placements).toBe(1) -- still just the core, never replayed as a
+			-- second Instance
+			expect(station.placements[1].level).toBe(3)
+			expect(#sceneBuilder.placeCalls).toBe(0) -- no second core built
+			expect(#sceneBuilder.levelCalls).toBe(1)
+			expect(sceneBuilder.levelCalls[1]).toEqual({
+				userId = userId,
+				x = -1,
+				y = -1,
+				level = 3,
+			})
+		end
+	)
+
+	it("does not touch the scene builder when the saved core is still level 1", function()
+		local profile = profileRepository:load(userId)
+		profile.modules = { { id = "Core", x = -1, y = -1, r = 0, lv = 1 } }
+		profileRepository:save(userId, profile)
+
+		restoreStation:run(userId)
+
+		expect(#sceneBuilder.levelCalls).toBe(0)
+	end)
+
 	it("replays every saved module into the station and the scene", function()
 		local profile = profileRepository:load(userId)
 		profile.modules = {

@@ -48,9 +48,19 @@ function RestoreStation:run(userId: number)
 	local saved = StationProfileSync.restore(profile.modules)
 
 	for _, placement in saved do
-		-- SceneBuilder:claimPlot already placed the core's Instance --
-		-- replaying it here would build a second, overlapping one.
+		-- SceneBuilder:claimPlot already placed the core's Instance AND its
+		-- DATA entry (Placement.initial() seeds both station.occupancy and
+		-- station.placements with it) -- replaying it here would build a
+		-- second, overlapping Instance. But claimPlot always starts it at
+		-- level 1, and the core is upgradable like any other module (see
+		-- ModuleCatalog.isUpgradable: power > 0), so its LEVEL still needs
+		-- restoring even though its existence doesn't.
 		if placement.id == "Core" then
+			local existing = station.occupancy[Grid.key(placement.x, placement.y)]
+			if existing and existing.level ~= placement.level then
+				existing.level = placement.level
+				self.sceneBuilder:setModuleLevel(userId, placement.x, placement.y, placement.level)
+			end
 			continue
 		end
 

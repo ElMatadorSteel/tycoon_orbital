@@ -478,6 +478,42 @@ something to "fix" later — don't recreate a `Shared/Config/` folder.
   longer fits (a corrupted save, or a module retired from the catalogue since) — into both the
   in-memory station and `sceneBuilder:placeModule`. 6 new Lune specs
   (`tests/specs/application/restore_station.spec.luau`), 134 total, all green.
+- **Upgrading a module raised its level (and its cost) without changing a single simulated
+  number.** `ModuleCatalog.levelMultiplier` existed and was even documented ("a level-1 module is
+  worth EXACTLY its sheet") but nothing in `Simulation.step` ever called it — every power/heat/
+  capacity/rate figure came straight off the level-1 base stats regardless of `placement.level`.
+  Only found by playing a station with real level-2/3 modules and comparing the HUD numbers by
+  hand; every existing Lune spec used level-1 fixtures throughout, so `levelMultiplier(1, ...) ==
+  1` made the bug invisible to the whole suite. Fixed by applying `levelMultiplier` in exactly the
+  two places `Balance.Upgrade`'s own rule ("a level only ever increases what a module PRODUCES,
+  never what it consumes") says it should: the producing branch of power, `capacity`, and a
+  radiator's own heat-capacity contribution in the power/heat loop, and `rate` in the flow-stage
+  loop — never the consuming branch, never raw `heat`. `StepParams` gained a required
+  `upgradeRules` field (threaded through `RunProductionTick`'s `Dependencies` and
+  `Container.luau`); 5 new Lune specs pin both halves of the rule (production/capacity/rate scale,
+  consumption/heat do not), 139 total.
+- **The HUD's module counter only ever refreshed once, at the moment `Location` became
+  "Station."** It listened to `workspace.Stations.ChildAdded` (a new PLAYER's station folder
+  appearing) instead of the player's OWN folder's children — so a module placed after that first
+  snapshot was never counted, and worse, `RestoreStation` replaying a large station is a burst of
+  many Instances that doesn't necessarily finish replicating before the `Location` attribute does,
+  which is what actually surfaced this as "0 module" against a live 89-module station. Fixed by
+  binding directly to the player's own station folder and refreshing on ITS `ChildAdded`/
+  `ChildRemoved`, the same pattern `BuildController`'s occupancy sync already used correctly.
+- **A busy factory made every OTHER action slow.** `RunProductionTick` called
+  `profileRepository:save()` (a real, rate-limited `DataStore:UpdateAsync`) every time a tick
+  earned whole revenue — for an efficient station that's nearly every 0.5s tick, continuously,
+  which floods that key's DataStore write budget (visible as "DataStore request was added to
+  queue... requests will be dropped" spam). Any OTHER action needing to save (upgrading, building,
+  spending) then queued behind that flood and could take several seconds — `DataStoreProfile
+  Repository`'s own retry logic waits `retryDelay * attempt` (2s+) between attempts once
+  rate-limited. Fixed by having `RunProductionTick` update the in-memory profile (still correct
+  for every other use case's next `load()`, since every `ProfileRepository` caches by reference —
+  see `DataStoreProfileRepository`'s header) without calling `save()`, and adding the periodic
+  autosave loop `Balance.Save.AutosaveInterval` was defined for but never wired to anything —
+  Bootstrap now saves every connected player every `AutosaveInterval` seconds, matching the
+  legacy `SaveService`'s three-moments design (periodic + `PlayerRemoving` + every other
+  mutation's own immediate save) that this migration had only ever built two thirds of.
 
 **Not done yet:** nothing migration-related. `ReplicatedStorage.Remotes` (orphaned legacy remotes
 folder) and `Workspace.Script` (an unrelated pre-existing placeholder) are cosmetic leftovers, not
