@@ -40,6 +40,12 @@ local Balance = {
 		CoreUpgradeCost = 375,
 	},
 
+	-- Dev-mode-only numbers -- never read outside `development` (see
+	-- Composition/Container.luau's flag), no bearing on real balance.
+	Dev = {
+		UnlimitedMoneyCeiling = 999999999, -- what DevSetUnlimitedMoney tops credits up to
+	},
+
 	Save = {
 		-- Changing this resets EVERYONE's save. Only do it when a format
 		-- change makes old saves unreadable.
@@ -87,6 +93,19 @@ local Balance = {
 
 	Simulation = {
 		TickRate = 0.5, -- seconds between two simulation steps
+	},
+
+	-- The prestige mechanic: reset the station and credits, once the core
+	-- reaches the threshold below, for a small permanent production boost.
+	-- `Enabled` is the modular per-zone switch this was built for -- only
+	-- one zone exists today, so it's one flag; a later multi-zone build
+	-- would key this per zone instead of adding a second flag elsewhere.
+	Rebirth = {
+		Enabled = true, -- temporarily on, on this one zone, to test it live
+		NormalThreshold = 10, -- core level required for a free rebirth
+		EarlyThreshold = 5, -- core level required with the paid EarlyRebirth pass
+		BonusPerRebirth = 0.25, -- +25% production, additive, per rebirth banked
+		UltimateMultiplier = 1.5, -- flat multiplier while the paid Ultimate pass is owned
 	},
 }
 

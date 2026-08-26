@@ -55,6 +55,8 @@ Theme.Function = {
 	Money = Color3.fromRGB(74, 206, 96),
 	Info = Color3.fromRGB(255, 186, 62),
 	Move = Color3.fromRGB(56, 191, 199),
+	Rebirth = Color3.fromRGB(230, 90, 200),
+	Ultimate = Color3.fromRGB(255, 205, 60),
 }
 
 -- Lighting for the 3D thumbnails. A ViewportFrame has its OWN lighting,

@@ -17,6 +17,14 @@ describe("Snapshot", function()
 		expect(Snapshot.location("Lobby").Location).toBe("Lobby")
 	end)
 
+	it("rebirth() carries every field through as-is", function()
+		local snap = Snapshot.rebirth(2, true, false, 1.875)
+		expect(snap.Rebirths).toBe(2)
+		expect(snap.HasUltimate).toBe(true)
+		expect(snap.HasEarlyRebirth).toBe(false)
+		expect(snap.GlobalBoost).toBe(1.875)
+	end)
+
 	it("production() flattens the nested power/heat stats into a flat table", function()
 		local snap = Snapshot.production({
 			sunlight = 0.5,

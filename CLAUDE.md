@@ -608,6 +608,288 @@ still load-bearing design decisions worth not re-litigating.
   `tests/specs/domain/station/placement.spec.luau` and
   `tests/specs/application/station_integration.spec.luau`, 156 total.
 
+**Upgrade cap raised to 10, gated on the core's own level:**
+
+- `Balance.Upgrade.MaxLevel: 5 -> 10` — the only place that number lives; every use case/UI
+  already reads it dynamically, so this alone is the whole change on its own.
+- New rule, requested alongside the cap raise: **no module may be upgraded above the core's
+  CURRENT level** — the core paces the whole station's progression, so the very first upgrade a
+  player can ever buy is the core's own. `Placement.coreLevel(station)` (new, in
+  `Domain/Station/Placement.luau`) finds it; `UpgradeModule.luau` refuses
+  (`"cannot exceed the core's level"`) whenever a non-core module's level is already `>=` the
+  core's, checked after the existing max-level-cap refusal but before the cost computation. The
+  core itself is exempt from its own rule (nothing to compare it against).
+- The core's own upgrade needed a cost independent of `MinCost`'s shared floor: raising `MinCost`
+  itself to charge the core more would ALSO have raised every other module's cheap early levels
+  (their base-cost-scaled price sits just above the old floor at level 1 — confirmed by hand
+  computing each module's level-1 cost against the floor before picking this approach). Fixed by
+  giving `ModuleCatalog.upgradeCost` a **core-specific special case**
+  (`if definition.id == "Core" then return rules.coreUpgradeCost end`, checked before the generic
+  formula) and a new `Balance.Upgrade.CoreUpgradeCost = 375` (1.5x the old flat 250) — flat at
+  every level, same as before, just pricier.
+- 7 new Lune specs (`Placement.coreLevel`, the core's dedicated cost, and four `UpgradeModule`
+  "core gate" integration tests interleaving core-then-module upgrades) — several EXISTING
+  upgrade tests in `station_integration.spec.luau` had to be updated to upgrade the core in
+  lockstep first, since they previously upgraded a module directly from level 1 with the core
+  left behind at 1, which the new gate now correctly refuses. 163 total at this point.
+- Live-verified against the real ~180-module test station (core already at level 6-8 from prior
+  sessions): a module below the core's level caught up to it successfully; a second attempt past
+  the core's level was refused with the exact new message; the core's own upgrade cost read 375
+  at every level tried, matching `Balance.Upgrade.CoreUpgradeCost` exactly.
+- A companion change, floated the same day and reverted the same day: resource sell values
+  (Ore/Alloy/Component) were multiplied by 10 to compensate for the higher level cap making a
+  full build-to-max take an estimated ~35h of connected time (measured via a throwaway Lune
+  simulation script using the real `Simulation.step`/`ModuleCatalog`/`Placement` code, not hand
+  math — deleted after use, never part of the tracked tree). Reverted back to the original
+  5/22/75 the same session, at the user's request, pending a revisit later — **don't reintroduce
+  the x10 values without being asked; the catalogue's real values are still the original ones.**
+
+**Rebirth (prestige) system, built modular and temporarily enabled to test:**
+
+- The shape: once the core reaches a threshold level, a player may reset their station AND their
+  credits for a small, permanent, per-rebirth production multiplier that stacks across every
+  future rebirth. Two paid shortcuts sit on top: **Ultimate** (a flat x1.5 multiplier on
+  everything, independent of rebirths) and **EarlyRebirth** (lowers the threshold from level 10
+  to level 5 — the reward for rebirthing is identical either way, only the wait is shorter).
+  Numbers (confirmed with the user, not guessed): `+25%` additive per rebirth, `x1.5` for
+  Ultimate, thresholds `10`/`5`. **Deliberately NOT built this pass**: raising the level cap
+  itself (e.g. to 20) after a rebirth, and any real Roblox Game Pass wiring — both were explicitly
+  floated as "see if"/"later" by the user, not firm requirements.
+- `Domain/Rebirth/Rebirth.luau` (new): `Rebirth.canRebirth(coreLevel, hasEarlyPass, rules)` and
+  `Rebirth.multiplier(rebirths, hasUltimate, rules)`, both pure. `Rules.enabled` is the modular
+  per-zone switch this was explicitly asked for — flip it off and `canRebirth` never returns
+  true, whatever the core's level; only one zone/station design exists today, so it's one flag
+  in `Balance.Rebirth`, not a per-zone table yet. `Rebirth.Passes` names the two pass-id strings
+  once (`"Ultimate"`, `"EarlyRebirth"`) so nothing else hand-spells them.
+- **No new Profile fields needed** — `profile.rebirths: number` and
+  `profile.unlocked: {[string]: boolean}` already existed, reserved from early in the migration
+  ("Reserved for progression... no migration to do the day they get wired up" — see
+  `Profile.luau`'s own header). The two passes are just `profile.unlocked.Ultimate`/
+  `.EarlyRebirth` booleans; nothing to migrate, nothing to sanitize differently.
+- `Simulation.step` gained a required `globalBoost: number` field on `StepParams`, multiplied in
+  at exactly the same three places `ModuleCatalog.levelMultiplier`'s own per-module boost already
+  was (the producing branch of power, capacity/heat-capacity, flow-stage rate) — never
+  consumption, same rule as levels. `RunProductionTick` computes it once per tick from
+  `profile.rebirths`/`profile.unlocked.Ultimate` via `Rebirth.multiplier` and threads it through;
+  every other `Simulation.step` caller (Lune fixtures) needed `globalBoost = 1` added for the
+  no-op case.
+- `Server/Application/UseCases/RebirthStation.luau` (new): load → `Placement.coreLevel` +
+  `Rebirth.canRebirth` → tear down every non-core module's Instance
+  (`sceneBuilder:removeModule`, reusing the existing port method — no new one needed) and reset
+  the core's Instance level to 1 (`sceneBuilder:setModuleLevel`, ditto) → replace `station` with
+  a fresh `Placement.initial()` → `profile.credits = startingCredits`, `profile.rebirths += 1` →
+  `StationProfileSync.apply` → save both → publish `Snapshot.credits` and a new
+  `Snapshot.rebirth(rebirths, hasUltimate, hasEarlyPass, boost)`. Deliberately resets ONLY the
+  station and credits, not `profile.objective` — the onboarding chain is a one-time teaching
+  device, replaying it on every rebirth would just be annoying, not requested either.
+- `Server/Application/UseCases/DevGrantPass.luau` (new): the **testing stand-in for real
+  monetization**, which can't be wired yet — no real Roblox Game Pass exists to check ownership
+  of. Sets `profile.unlocked[passId] = true` and re-publishes the rebirth snapshot; takes the
+  exact same grant -> save -> snapshot path CLAUDE.md's own dev-affordance rule requires, so a
+  real `MarketplaceService.PromptGamePassPurchaseFinished` handler later would set the identical
+  flag and go through nothing else. Wired into `Container` **only** when built with
+  `development = true` (a new `Container.new` option, set from `Bootstrap.luau` via
+  `RunService:IsStudio()`) — `Container.useCases.devGrantPass` is simply absent otherwise, and
+  `RemoteBindings.bind` only sets `Net.DevGrantPass.OnServerInvoke` when it exists, so the remote
+  Instance exists in production (`Net.luau` always creates every listed remote) but has no
+  handler there at all.
+- Client: a sixth dock button ("Renaissance", `Icons.Arrows["Rebirth"]` — an icon the pack
+  already had, evidently ripped from a simulator game with the same mechanic — new
+  `Theme.Function.Rebirth` magenta) opens a confirmation modal (`BuildPanel:ShowRebirthConfirm`)
+  before doing anything: this is the one destructive, irreversible action in the whole build
+  menu, unlike every toggleable mode next to it. The modal's "current -> next boost" preview is
+  computed client-side from the published `GlobalBoost` attribute plus `Balance.Rebirth`'s own
+  numbers (linear in rebirth count, no need to duplicate `Rebirth.multiplier` client-side) —
+  purely cosmetic, the server still recomputes and publishes the real value once the rebirth
+  actually happens. `HudController` shows a `Renaissances : N (x1.25) [· Ultimate]` line under
+  the income line, only once it means something (`rebirths > 0` or `boost > 1`) — an eligibility
+  check is NOT precomputed client-side at all (no client-side core-level tracking exists for
+  this); clicking always asks the server, whose refusal reason is shown as an ordinary toast,
+  same pattern every other action already uses. Dev-only **F9/EarlyRebirth F10** keybinds grant
+  the two passes directly for live testing, gated by `RunService:IsStudio()` client-side too
+  (belt-and-suspenders on top of the server never binding a handler outside dev mode).
+- 18 new Lune specs (`Rebirth.canRebirth`/`.multiplier` in isolation, `Simulation.step`'s
+  `globalBoost` stacking with per-module levels, and a dedicated `rebirth_integration.spec.luau`
+  mounting the real `Container` — refusal below threshold, success at threshold resetting
+  station/credits/core level, the early-pass shortcut, the `enabled` kill switch, SceneBuilder
+  wiring, `DevGrantPass` including "does not exist without `development = true`", and the boost
+  actually reaching `RunProductionTick`'s real income). 190 total.
+- Live-verified in Play mode against the real ~185-module test station: the refusal path (core
+  below threshold, no pass) was confirmed via a direct remote call with no side effects; granting
+  Ultimate via `DevGrantPass` correctly bumped the published `GlobalBoost` to 1.5 and the HUD line
+  appeared with the right multiplier and income scaled by exactly 1.5x; the dock button and
+  confirmation modal rendered correctly with the right "current -> next" math (x1.50 -> x1.88).
+  **Deliberately NOT confirmed live**: actually completing a rebirth against that real station,
+  since doing so would irreversibly wipe ~185 real modules built up over many prior sessions —
+  that half of the mechanic is covered by the Lune integration tests above instead (which
+  exercise the exact same `RebirthStation` code path against fake ports), pending the user's own
+  call on whether to test the real wipe against real data.
+- **The user then actually did that real test themselves** (twice, reaching `rebirths = 2` on
+  the real ~185-module station, which is what wiped it) — this is what surfaced the one real bug
+  this feature's first pass had: the HUD showed a single blended
+  `"Renaissances : 1 (x1.88) · Ultimate"` line, which reads as if Ultimate CAUSED that combined
+  number, when the free rebirth bonus (+25%/rebirth), Ultimate (flat x1.5, unrelated to rebirth
+  count), and EarlyRebirth (only ever changes the THRESHOLD, never the multiplier) are three
+  independent facts that were never meant to be shown as one. Fixed by splitting the HUD into
+  two lines that are never combined into a shared number — `HudController`'s
+  `rebirthCount`/`rebirthPasses` captions (`"Renaissances : N (+25% chacune)"` and, on its own
+  line, `"Ultimate actif (x1.5)"` and/or `"Renaissance dès niv. 5 débloquée"`, joined with " · "
+  only when BOTH passes are owned, never with the rebirth count) — and by rewriting
+  `BuildPanel:ShowRebirthConfirm` to state the flat `+25%` this specific rebirth grants, dropping
+  the "current boost -> next boost" preview entirely (it was the same conflation, just in the
+  confirmation dialog instead of the HUD). Re-verified live against the same (now much smaller,
+  2-module) station: both lines render separately, and the confirm dialog's new wording fits
+  the box cleanly.
+- **A real in-game place to get Ultimate, and the rebirth line showing its actual result.** Two
+  more requests from the same follow-up: (a) Ultimate had no discoverable UI at all yet, only the
+  F9 dev keybind; (b) `"Renaissances : N (+25% chacune)"` showed the flat PER-rebirth rate, not
+  what N rebirths actually add up to. Fixed (b) trivially:
+  `Balance.Rebirth.BonusPerRebirth * 100 * rebirths` instead of the constant alone, so 2 rebirths
+  reads `"(+50%)"`, 3 reads `"(+75%)"`. Fixed (a) with a seventh dock button
+  (`Icons.Menus["VIP"]`, new `Theme.Function.Ultimate` gold, a permanent `"x1,5"` badge via the
+  existing `SetBadge` — not an affordability count like Construire's) that **hides itself once
+  owned** (`BuildPanel:SetUltimateOwned`, driven by the `HasUltimate` attribute) since it's a
+  one-time purchase, not a repeatable action like its six dock neighbors. Confirming it still
+  calls `Net.DevGrantPass:InvokeServer("Ultimate")` — the same dev-only stand-in as before, now
+  reachable without knowing the hidden keybind, until a real Game Pass exists to swap it for.
+- **Refactored the one-off Rebirth confirm modal into a generic `BuildPanel:ShowConfirm(title,
+  body, confirmColor, onConfirm)`** so Ultimate's confirmation could reuse it instead of
+  duplicating the whole dialog a second time — `confirmColor` tints the Confirm button
+  (magenta for Rebirth, gold for Ultimate) so the two read as distinct actions sharing one
+  mechanism, not the same dialog blindly reused. `onRebirth`/`ShowRebirthConfirm` are gone;
+  BuildController now builds both dialogs' full title/body text itself and hands `ShowConfirm`
+  a closure to run on confirm, matching BuildPanel's own header ("this module only displays,
+  it decides nothing").
+- Live-verified: the button appears with the gold "x1,5" badge, opens a gold-confirm-button
+  dialog with the requested "x1.5 sur toute la production, permanent" wording, and granting it
+  correctly disappears the button and restores the HUD's "Ultimate actif" line. One genuine
+  red herring surfaced mid-test and is worth remembering for next time: forcing
+  `player:SetAttribute("HasUltimate", false)` from the CLIENT to preview the "not yet owned"
+  state, then granting for real, left the client stuck reading `false` even though the server's
+  own attribute (and the persisted profile) were correctly `true` — Roblox only re-replicates an
+  attribute on an actual server-side VALUE CHANGE, and the server's value never changed (it was
+  already `true`, DevGrantPass set it to `true` again), so the client's own locally-forced
+  override was never corrected. Not a game bug: real code never writes to a Player's own
+  attributes from the client, only Bootstrap/the use cases do, server-side, on real transitions.
+
+**Dev Mode panel (a real in-game dev tool, replacing the old F9/F10 keybinds):**
+
+- A dock button (`DevController`, `DevPanel.luau`, top-right — deliberately far from the build
+  dock, since this is a testing tool, not a player-facing one) opens a small window with: a
+  rebirth-count override (a text box + "Appliquer") with its OWN toggle for whether applying it
+  also wipes the station/credits like a real rebirth, an Ultimate on/off toggle, an
+  EarlyRebirth on/off toggle, a "give yourself N credits" box + button, an "unlimited money" on/off
+  toggle, and a two-step "TOUT RÉINITIALISER" (full reset) button. Only ever built at all under
+  `RunService:IsStudio()` (`DevController:Start()`'s first line) — added last in
+  `Bootstrap.client.luau`'s `CONTROLLERS` list specifically so it can never delay anything real.
+- **`DevGrantPass` (grant-only, F9/F10-keybind era) became `DevSetPass` (toggle, on or off)** —
+  `DevSetPass:run(userId, passId, enabled)` sets `profile.unlocked[passId] = enabled` instead of
+  always `true`, so the panel's Ultimate/EarlyRebirth buttons are real toggles, not one-way
+  grants. The old `BuildController` F9/F10 keybind block (and the file `DevGrantPass.luau`) were
+  deleted outright, not kept alongside the panel — the panel is a strict superset, and CLAUDE.md's
+  "don't build backwards-compat shims" rule applies to internal dev tooling too. The in-game
+  Ultimate purchase button's confirm callback was updated to call `DevSetPass:InvokeServer
+  ("Ultimate", true)` in place of the old `DevGrantPass` call.
+- **New `Container` field: `container.development: boolean`.** Every dev-only use case
+  (`devSetPass`/`devSetRebirths`/`devSetUnlimitedMoney`/`devResetAll`) was already gated by only
+  existing on `container.useCases` in dev mode, per the pre-existing pattern — but `DevGiveCredits`
+  needed to reuse the ALREADY-wired, not-dev-only `AddCredits` use case (the exact one real
+  purchases/rewards use — no new use case needed, just a new remote exposing it to a player
+  action for the first time), so `RemoteBindings.luau` can't gate that one binding by "does this
+  use case exist" the way it gates the other four. `container.development` is the one flag that
+  gates it directly instead: `if container.development then Net.DevGiveCredits.OnServerInvoke =
+... end`.
+- **"Unlimited money" is a periodic top-up, not an intercept on every spend path.** Toggling it
+  sets a new `SessionRegistry` flag (`_unlimitedMoney[userId]`, alongside the pre-existing
+  `_embarked`/`_restored` volatile per-session state — never reaches the profile, matching every
+  other `SessionRegistry` entry) rather than touching `SpendCredits`/`PlaceModule`/`UpgradeModule`/
+  `RebirthStation` individually. `RunProductionTick` (already running every
+  `Balance.Simulation.TickRate` = 0.5s for every connected player, Lobby or Station, no location
+  gate) checks it once per tick: if enabled and `credits < Balance.Dev.UnlimitedMoneyCeiling`
+  (999,999,999 — a new `Dev` section in `Balance.luau`, explicitly dev-only numbers with "no
+  bearing on real balance"), it sets and republishes `Credits` at the ceiling. Turning it back off
+  simply stops that top-up on the next tick; nothing reverts credits downward on its own.
+- **`DevResetAll` reuses `Profile.blank(rules)`** (the same pre-existing Domain function
+  `InMemoryProfileRepository`'s cold-start path already used) rather than hand-building the
+  "just joined" shape a second time — confirmed by reading `Profile.blank`'s source that it only
+  reads `rules.startingCredits` internally, so passing the full `profileRules` through from
+  `Bootstrap` (a new `rules.profileRules: Profile.Rules` field on `Container`, reusing the same
+  local `Bootstrap.luau` already built for `DataStoreProfileRepository`) is correct even though
+  `blank()` itself only needs one field of it. Wipes the station the same way `DevSetRebirths`'s
+  `resetStation = true` branch does (remove every non-Core placement via `sceneBuilder
+:removeModule`, reset the Core's level via `sceneBuilder:setModuleLevel(userId, -1, -1, 1)`,
+  replace `station` with `Placement.initial()`), then republishes `Credits`/`Objective`/`Rebirth`
+  snapshots so the client reflects the reset immediately without needing a rejoin.
+- **Two-step arm/confirm for "TOUT RÉINITIALISER"**, not BuildPanel's full modal confirm — a
+  dev-only destructive action doesn't need the same weight of protection as a real player-facing
+  one, but still deserves more than a bare single click. First click "arms" the button (white
+  background, red "CLIQUER POUR CONFIRMER" text, a `task.delay(4, ...)` auto-revert guarded by an
+  incrementing `armToken` so a stale timer from an earlier arm can never revert a newer one);
+  a second click while armed fires `onResetAll` and immediately repaints back to the resting
+  state (not via the timer — the confirm branch itself resets the visuals as part of firing).
+- **Two naming bugs found and fixed during live testing, both about MCP-driven verification, not
+  gameplay:** (1) `DevPanel`'s `textBox`/`toggleButton`/`actionButton` helpers originally took no
+  `Name` parameter, so every TextBox instance shared Roblox's default "TextBox" name and every
+  chunky button shared "Frame" — harmless in-game (nothing there reads instance names), but it
+  made `instance_path`-based MCP clicks ambiguous between the rebirths box and the credits box.
+  Fixed by adding an explicit `name: string` first parameter to all three helpers and naming every
+  call site distinctly (`RebirthsBox`, `CreditsBox`, `ResetToggle`, `ApplyRebirths`,
+  `UltimateToggle`, `EarlyToggle`, `GiveCredits`, `UnlimitedToggle`, `ResetAll`). (2) A live click
+  on "Donner" appeared to silently do nothing after a fresh Play session — root-caused via
+  screenshot to the panel's `ScrollingFrame` having reset to its top scroll position, scrolling
+  the button out of view; an `instance_path`-click on a scrolled-out-of-view element fails with no
+  error at all. Not a code bug — same "must scroll a `ScrollingFrame` into view before clicking"
+  gotcha `BuildPanel`'s own grid already has.
+- **Live-verified end-to-end in Play mode:** Ultimate/EarlyRebirth toggles both flip the real
+  `HasUltimate`/`HasEarlyRebirth` attributes and repaint green/off correctly; giving credits (via
+  `DevGiveCredits`, tested with a negative amount too, to bring a balance back down for the next
+  check) lands the exact requested delta; enabling "Argent illimité" tops a low balance up to the
+  999,999,999 ceiling within one tick, and disabling it immediately stops any further top-up
+  (confirmed by watching a manually-lowered balance stay put, not snap back); `DevSetRebirths`
+  correctly leaves the station/credits untouched when `resetStation = false` and correctly wipes
+  credits back to `startingCredits` when `true`; the "TOUT RÉINITIALISER" two-step confirm, once
+  actually fired (arm click + confirm click, back-to-back with no MCP round-trip in between —
+  see below), resets credits/rebirths/both passes/objective all at once, matching `DevResetAll`'s
+  own Lune spec. No console errors at any point.
+- **A testing-methodology dead end worth recording, not a product bug:** verifying the two-step
+  arm/confirm via MCP by clicking, then making a SEPARATE tool call to read the button's color/text
+  back, kept reading "unarmed" even right after an arm click — looking exactly like the click was
+  being silently dropped. Root cause: each MCP tool call (click, screenshot, console read,
+  attribute read) is its own round trip taking a couple of seconds, and several chained together
+  routinely exceeded the 4-second auto-revert window between the arm click and the read-back —
+  the arm genuinely happened and then genuinely auto-reverted before the check landed. Confirmed
+  by attaching a temporary diagnostic `print` inside the real handler (proved it fires every
+  click, in order) and then firing both the arm click and the confirm click in a single
+  `user_mouse_input` call with no round trip in between — the reset fired correctly every time.
+  Lesson for testing any short-lived armed/confirm UI state like this one via MCP again: batch the
+  two clicks into one tool call, don't check state between them.
+- **Not conclusively re-confirmed this pass: a `DevResetAll` reset surviving a Play session
+  restart.** Two attempts (one with an explicit 5s wait before stopping Play, to let any DataStore
+  write flush) both reloaded the OLDER pre-reset profile values instead of the reset ones, on an
+  account that had just received a heavy burst of rapid-fire dev-remote calls (rebirths set
+  several times, credits adjusted several times, multiple reset attempts) in a short span —
+  consistent with the DataStore per-key write-rate limiting CLAUDE.md's "a busy factory made every
+  OTHER action slow" note already documents elsewhere, not a new bug in this feature (`DevResetAll`
+  calls `profileRepository:save()` through the exact same path every other verified use case does,
+  and its own Lune spec already pins the save happening correctly in isolation from any real
+  DataStore). Worth a clean re-check with normal, unhurried play if it ever matters, rather than
+  assumed fixed.
+- **Found right after, via live testing on-station (not in the Lobby, where every earlier check
+  happened): the dock button overlapped the build dock's own "Construire" button.** Both are
+  anchored to the same right screen edge; the build dock (`BuildPanel`) is vertically centered
+  and, with 7 buttons (Construire/Améliorer/Modifier/Démolir/Lobby/Renaissance/Ultimate), tall
+  enough that its topmost button already sits close to the very top of the screen (measured via
+  `AbsolutePosition`: Construire's top edge at y=37 on a 868px-tall viewport) — the dev button's
+  old position (`SPACE.xl` = 24px from the top, 48px tall) put its own bottom edge at y=72, a
+  35px overlap. Fixed by shrinking the dock button to a bespoke 32x32 (smaller than every
+  `Theme.Control` token, the smallest of which — `sm` — would still have clipped by 1px) flush
+  against the very top of the screen (y=0), clearing Construire's top edge by a clean 5px;
+  `DevPanel:new`'s window-open position was updated in lockstep (it was expressed as an offset
+  from the button's own height, not a hardcoded number, so this only needed the two new
+  `DEV_BUTTON_SIZE`/`DEV_BUTTON_TOP` locals threaded through, not a second magic number). Live-
+  verified via `AbsolutePosition` reads before/after (35px overlap → 5px clear gap) and a
+  screenshot on the same real station.
+
 **Not done yet:** nothing migration-related. `ReplicatedStorage.Remotes` (orphaned legacy remotes
 folder) and `Workspace.Script` (an unrelated pre-existing placeholder) are cosmetic leftovers, not
 blockers — see Stage 8's last bullet. From here on, treat this as an ordinary, already-migrated

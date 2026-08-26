@@ -27,6 +27,7 @@ local Orbit = require(fromShared("Domain/Production/Orbit"))
 local Simulation = require(fromShared("Domain/Production/Simulation"))
 local ModuleCatalog = require(fromShared("Domain/Station/ModuleCatalog"))
 local Credits = require(fromShared("Domain/Economy/Credits"))
+local Rebirth = require(fromShared("Domain/Rebirth/Rebirth"))
 local Snapshot = require("../Snapshot")
 
 type OrbitRules = Orbit.Rules
@@ -44,6 +45,8 @@ export type Dependencies = {
 	heatRules: HeatRules,
 	resourceValues: ResourceValues,
 	upgradeRules: UpgradeRules,
+	rebirthRules: Rebirth.Rules,
+	unlimitedMoneyCeiling: number, -- dev-only: see SessionRegistry:hasUnlimitedMoney
 }
 
 export type TickStats = {
@@ -60,8 +63,15 @@ RunProductionTick.__index = RunProductionTick
 function RunProductionTick:run(userId: number, deltaTime: number): TickStats
 	local station = self.stationRepository:load(userId)
 	local state = self.sessionRegistry:production(userId)
+	-- Loaded unconditionally, not just when revenue > 0 below: rebirths and
+	-- passes live here, and globalBoost needs them before the step even
+	-- runs. Cheap either way -- every ProfileRepository caches by reference
+	-- (see DataStoreProfileRepository's header), this is not a fresh read.
+	local profile = self.profileRepository:load(userId)
 
 	local sunlight = Orbit.sunlightAt(self.clock:monotonic(), self.orbitRules)
+	local hasUltimate = profile.unlocked[Rebirth.Passes.Ultimate] == true
+	local globalBoost = Rebirth.multiplier(profile.rebirths, hasUltimate, self.rebirthRules)
 
 	local result = Simulation.step({
 		station = station,
@@ -72,13 +82,13 @@ function RunProductionTick:run(userId: number, deltaTime: number): TickStats
 		heatRules = self.heatRules,
 		resourceValues = self.resourceValues,
 		upgradeRules = self.upgradeRules,
+		globalBoost = globalBoost,
 	})
 
 	state.charge = result.charge
 	state.pendingCredit = result.pendingCredit
 
 	if result.wholeRevenue > 0 then
-		local profile = self.profileRepository:load(userId)
 		profile.credits = Credits.add(profile.credits, result.wholeRevenue)
 		-- Deliberately NOT profileRepository:save() here. A busy factory
 		-- earns whole revenue on nearly every tick (every ~0.5s), and a real
@@ -93,6 +103,18 @@ function RunProductionTick:run(userId: number, deltaTime: number): TickStats
 		-- explicit save. Durability past that is Bootstrap's periodic
 		-- autosave loop and the PlayerRemoving save, same as every other
 		-- mutation already covers for the moment a session actually ends.
+		self.statsPublisher:publish(userId, Snapshot.credits(profile.credits))
+	end
+
+	-- Dev-only: tops the balance back up every tick while the flag is set,
+	-- so no amount of dev-mode spending can ever run it dry. A real player
+	-- never has this flag -- see DevSetUnlimitedMoney, never wired outside
+	-- development mode.
+	if
+		self.sessionRegistry:hasUnlimitedMoney(userId)
+		and profile.credits < self.unlimitedMoneyCeiling
+	then
+		profile.credits = self.unlimitedMoneyCeiling
 		self.statsPublisher:publish(userId, Snapshot.credits(profile.credits))
 	end
 

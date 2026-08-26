@@ -4,6 +4,7 @@
 -- completed.
 
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
 -- fromShared(path) reaches ReplicatedStorage.Shared directly: Rojo maps
 -- src/Server and src/Shared to different service roots with no common
@@ -24,6 +25,7 @@ end
 
 local Balance = require(fromShared("Balance"))
 local ModuleCatalog = require(fromShared("Domain/Station/ModuleCatalog"))
+local Rebirth = require(fromShared("Domain/Rebirth/Rebirth"))
 local Container = require("./Container")
 local RemoteBindings = require("./RemoteBindings")
 local SessionRegistry = require("../Application/SessionRegistry")
@@ -84,6 +86,14 @@ function Bootstrap.start()
 	for id, resource in ModuleCatalog.Resources do
 		resourceValues[id] = resource.value
 	end
+
+	local rebirthRules = {
+		enabled = Balance.Rebirth.Enabled,
+		normalThreshold = Balance.Rebirth.NormalThreshold,
+		earlyThreshold = Balance.Rebirth.EarlyThreshold,
+		bonusPerRebirth = Balance.Rebirth.BonusPerRebirth,
+		ultimateMultiplier = Balance.Rebirth.UltimateMultiplier,
+	}
 
 	local gridRules = {
 		cellSize = Balance.Grid.CellSize,
@@ -156,7 +166,12 @@ function Bootstrap.start()
 				overheatPenalty = Balance.Heat.OverheatPenalty,
 			},
 			resourceValues = resourceValues,
+			rebirth = rebirthRules,
+			startingCredits = Balance.Economy.StartingCredits,
+			profileRules = profileRules,
+			unlimitedMoneyCeiling = Balance.Dev.UnlimitedMoneyCeiling,
 		},
+		development = RunService:IsStudio(),
 	})
 
 	RemoteBindings.bind(container)
@@ -184,6 +199,13 @@ function Bootstrap.start()
 		local profile = profileRepository:load(player.UserId)
 		container.ports.statsPublisher:publish(player.UserId, Snapshot.credits(profile.credits))
 		container.ports.statsPublisher:publish(player.UserId, Snapshot.objective(profile.objective))
+		local hasUltimate = profile.unlocked[Rebirth.Passes.Ultimate] == true
+		local hasEarlyPass = profile.unlocked[Rebirth.Passes.EarlyRebirth] == true
+		local boost = Rebirth.multiplier(profile.rebirths, hasUltimate, rebirthRules)
+		container.ports.statsPublisher:publish(
+			player.UserId,
+			Snapshot.rebirth(profile.rebirths, hasUltimate, hasEarlyPass, boost)
+		)
 
 		container.useCases.returnToLobby:run(player.UserId)
 	end

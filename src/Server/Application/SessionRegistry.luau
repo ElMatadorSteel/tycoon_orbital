@@ -23,6 +23,11 @@
 --     re-embarking after a trip to the lobby (claimPlot's early-return
 --     path, not a fresh claim) would replay the save a second time on top
 --     of the station the player already has, duplicating every module.
+--   - unlimitedMoney: a development-only toggle (DevSetUnlimitedMoney) --
+--     RunProductionTick tops credits back up against a large ceiling every
+--     tick while it's set, so no dev-mode spending can ever run it dry.
+--     Deliberately session-only, never persisted: a real player's balance
+--     must never depend on a flag surviving a reconnect by accident.
 
 export type ProductionState = { charge: number, pendingCredit: number }
 
@@ -34,6 +39,7 @@ function SessionRegistry.new()
 		_production = {} :: { [number]: ProductionState },
 		_embarked = {} :: { [number]: boolean },
 		_restored = {} :: { [number]: boolean },
+		_unlimitedMoney = {} :: { [number]: boolean },
 	}, SessionRegistry)
 end
 
@@ -63,12 +69,21 @@ function SessionRegistry:setRestored(userId: number, value: boolean)
 	self._restored[userId] = value
 end
 
+function SessionRegistry:hasUnlimitedMoney(userId: number): boolean
+	return self._unlimitedMoney[userId] == true
+end
+
+function SessionRegistry:setUnlimitedMoney(userId: number, value: boolean)
+	self._unlimitedMoney[userId] = value
+end
+
 -- Call on PlayerRemoving, once this is wired into a real bootstrap: nothing
 -- here should outlive the connection it belongs to.
 function SessionRegistry:release(userId: number)
 	self._production[userId] = nil
 	self._embarked[userId] = nil
 	self._restored[userId] = nil
+	self._unlimitedMoney[userId] = nil
 end
 
 return SessionRegistry

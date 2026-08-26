@@ -38,6 +38,7 @@ local function baseParams(overrides: { [string]: any }?)
 		heatRules = HEAT_RULES,
 		resourceValues = RESOURCE_VALUES,
 		upgradeRules = UPGRADE_RULES,
+		globalBoost = 1,
 	}
 	if overrides then
 		for key, value in overrides do
@@ -211,5 +212,57 @@ describe("Simulation.step -- module levels", function()
 		local result = Simulation.step(baseParams({ station = station, charge = 1000 }))
 		expect(result.power.consumption).toBe(14)
 		expect(result.heat.load).toBe(2 + 14)
+	end)
+end)
+
+-- globalBoost (Domain/Rebirth/Rebirth.luau's multiplier) stacks with each
+-- module's own level boost, at exactly the same places -- production,
+-- capacity, rate -- never consumption or raw heat load.
+describe("Simulation.step -- global boost (rebirth/ultimate)", function()
+	it("scales production the same way a level boost does", function()
+		local station = emptyStation()
+		place(station, "Core", -1, -1) -- +20, level 1
+		place(station, "SolarPanel", 1, -1) -- base +12, level 1
+		local result = Simulation.step(baseParams({ station = station, globalBoost = 1.5 }))
+		expect(result.power.production).toBe((20 + 12) * 1.5)
+	end)
+
+	it("stacks multiplicatively with a module's own level boost", function()
+		local station = emptyStation()
+		local panel = place(station, "SolarPanel", -1, -1) -- base +12
+		panel.level = 2 -- multiplier 1.5 under UPGRADE_RULES
+		local result = Simulation.step(baseParams({ station = station, globalBoost = 2 }))
+		expect(result.power.production).toBe(12 * 1.5 * 2)
+	end)
+
+	it("scales capacity, never consumption or heat load", function()
+		local station = emptyStation()
+		place(station, "Core", -1, -1) -- heat 2
+		place(station, "Battery", 1, -1) -- capacity 120, heat 0.5
+		local result = Simulation.step(baseParams({ station = station, globalBoost = 2 }))
+		expect(result.power.storage).toBe(120 * 2)
+		expect(result.heat.load).toBe(2 + 0.5)
+	end)
+
+	it("does not scale consumption or heat load for the rest of a network", function()
+		local station = emptyStation()
+		place(station, "Core", -1, -1) -- heat 2
+		place(station, "OreCollector", 1, -1) -- power -8, heat 6
+		place(station, "Smelter", 1, 1) -- power -14, heat 14
+		local result =
+			Simulation.step(baseParams({ station = station, globalBoost = 2, charge = 1000 }))
+		expect(result.power.consumption).toBe(8 + 14)
+		expect(result.heat.load).toBe(2 + 6 + 14)
+	end)
+
+	it("scales the flow stage's rate, raising revenue", function()
+		local station = emptyStation()
+		place(station, "Core", -1, -1)
+		place(station, "OreCollector", 1, -1) -- base rate 1
+		place(station, "CargoBay", 1, 1) -- base rate 4, no throttle
+		local result =
+			Simulation.step(baseParams({ station = station, globalBoost = 2, charge = 1000 }))
+		-- 1 unit/s * boost 2 * value 5
+		expect(result.income).toBeNear(10)
 	end)
 end)

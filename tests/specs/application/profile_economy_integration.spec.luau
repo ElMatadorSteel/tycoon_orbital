@@ -39,6 +39,14 @@ describe("Profile + Economy integration (real Container, fake ports)", function(
 				orbit = { period = 180, eclipseFraction = 0.3 },
 				heat = { baseCapacity = 40, capacityPerRadiator = 60, overheatPenalty = 0.55 },
 				resourceValues = { Ore = 5, Alloy = 22, Component = 75 },
+				rebirth = {
+					enabled = true,
+					normalThreshold = 10,
+					earlyThreshold = 5,
+					bonusPerRebirth = 0.25,
+					ultimateMultiplier = 1.5,
+				},
+				startingCredits = RULES.startingCredits,
 			},
 		})
 	end)

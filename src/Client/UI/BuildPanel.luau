@@ -215,6 +215,8 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 	self.onToggleModify = nil :: (() -> ())?
 	self.onOpenChanged = nil :: ((boolean) -> ())?
 	self.onReturnToLobby = nil :: (() -> ())?
+	self.onRebirthRequested = nil :: (() -> ())? -- the dock button was clicked, before any confirm
+	self.onUltimateRequested = nil :: (() -> ())? -- ditto, for the Ultimate button
 
 	self._entries = {} :: { [string]: any }
 	self._selected = nil :: string?
@@ -229,7 +231,7 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 		Name = "Dock",
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.new(1, -SPACE.xl, 0.5, 0),
-		Size = UDim2.fromOffset(ICON, ICON_TOTAL * 5 + SPACE.sm * 4),
+		Size = UDim2.fromOffset(ICON, ICON_TOTAL * 7 + SPACE.sm * 6),
 		BackgroundTransparency = 1,
 		Parent = parent,
 	}, {
@@ -286,6 +288,35 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 		Caption = "Lobby",
 	})
 	self._lobbyButton.Root.Parent = self._dock
+
+	-- Only ever shown while on the station (SetAvailable), same as the
+	-- rest of the dock -- eligibility itself is NOT precomputed here (no
+	-- client-side core-level tracking exists): clicking always asks the
+	-- server, whose refusal reason (not eligible yet, disabled this zone,
+	-- ...) is shown as an ordinary toast, same pattern as every other action.
+	self._rebirthButton = Theme.iconButton({
+		Name = "Renaissance",
+		LayoutOrder = 6,
+		Color = FUNCTION.Rebirth,
+		Image = Icons.Arrows["Rebirth"],
+		Caption = "Renaissance",
+	})
+	self._rebirthButton.Root.Parent = self._dock
+
+	-- Hidden once owned (SetUltimateOwned) -- it's a one-time purchase, not
+	-- a repeatable action like everything else in this dock; once bought
+	-- there is nothing left to click, and the HUD already shows it's active.
+	self._ultimateButton = Theme.iconButton({
+		Name = "Ultimate",
+		LayoutOrder = 7,
+		Color = FUNCTION.Ultimate,
+		Image = Icons.Menus["VIP"],
+		Caption = "Ultimate",
+	})
+	-- Permanent, not an affordability count like Construire's badge: the
+	-- x1.5 multiplier this button grants, spelled out right on it.
+	self._ultimateButton:SetBadge("x1,5")
+	self._ultimateButton.Root.Parent = self._dock
 
 	----------------------------------------------------------------------
 	-- Scrim
@@ -605,6 +636,93 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 	}, { self._toastIcon, self._toastLabel, self._toastScale })
 
 	----------------------------------------------------------------------
+	-- Generic confirmation modal -- shared by Rebirth (destructive: wipes
+	-- the station and credits) and Ultimate (a purchase, real money down
+	-- the line): both always ask first, unlike every toggleable mode above.
+	-- BuildPanel only displays; the title/body wording and what happens on
+	-- confirm are entirely the caller's call, via ShowConfirm below.
+
+	self._confirmTitle = Theme.new("TextLabel", {
+		Name = "Title",
+		Position = UDim2.fromOffset(SPACE.xl, SPACE.xl),
+		Size = UDim2.new(1, -SPACE.xl * 2, 0, 36),
+		BackgroundTransparency = 1,
+		Font = Theme.Font.Display,
+		TextSize = Theme.TextSize.display,
+		TextColor3 = COLORS.Text,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Text = "",
+	}, { Theme.textStroke(Theme.Line.base) })
+
+	self._confirmBody = Theme.prose({
+		Position = UDim2.fromOffset(SPACE.xl, SPACE.xl + 40),
+		Size = UDim2.new(1, -SPACE.xl * 2, 0, 90),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		TextWrapped = true,
+		Text = "",
+	})
+
+	local confirmCancel = Theme.chunky({
+		Name = "Cancel",
+		Position = UDim2.new(0, SPACE.xl, 1, -(SPACE.xl + Theme.Control.md)),
+		Size = UDim2.fromOffset(160, Theme.Control.md),
+		BackgroundColor3 = COLORS.MenuInner,
+		Radius = Theme.Radius.md,
+		Inner = true,
+	}, {
+		Theme.body({
+			Size = UDim2.fromScale(1, 1),
+			TextXAlignment = Enum.TextXAlignment.Center,
+			Text = "Annuler",
+		}),
+	})
+
+	self._confirmButton = Theme.chunky({
+		Name = "Confirm",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -SPACE.xl, 1, -(SPACE.xl + Theme.Control.md)),
+		Size = UDim2.fromOffset(220, Theme.Control.md),
+		BackgroundColor3 = FUNCTION.Rebirth,
+		Radius = Theme.Radius.md,
+		Inner = true,
+	}, {
+		Theme.body({
+			Size = UDim2.fromScale(1, 1),
+			TextXAlignment = Enum.TextXAlignment.Center,
+			TextColor3 = Color3.new(1, 1, 1),
+			Text = "Confirmer",
+		}),
+	})
+
+	self._confirm = Theme.panel({
+		Name = "Confirm",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(480, 220),
+		BackgroundColor3 = COLORS.Menu,
+		Radius = Theme.Radius.xl,
+		StrokeColor = COLORS.Inner,
+		StrokeThickness = 5,
+		Visible = false,
+		ZIndex = 9,
+		Parent = parent,
+	}, { self._confirmTitle, self._confirmBody, confirmCancel.Root, self._confirmButton.Root })
+
+	confirmCancel.Face.Activated:Connect(function()
+		self._confirm.Visible = false
+		self._pendingConfirm = nil
+	end)
+	self._confirmButton.Face.Activated:Connect(function()
+		self._confirm.Visible = false
+		local pending = self._pendingConfirm
+		self._pendingConfirm = nil
+		if pending then
+			pending()
+		end
+	end)
+
+	----------------------------------------------------------------------
 
 	self._openButton.Button.Face.Activated:Connect(function()
 		self:Toggle()
@@ -633,6 +751,16 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 	self._lobbyButton.Button.Face.Activated:Connect(function()
 		if self.onReturnToLobby then
 			self.onReturnToLobby()
+		end
+	end)
+	self._rebirthButton.Button.Face.Activated:Connect(function()
+		if self.onRebirthRequested then
+			self.onRebirthRequested()
+		end
+	end)
+	self._ultimateButton.Button.Face.Activated:Connect(function()
+		if self.onUltimateRequested then
+			self.onUltimateRequested()
 		end
 	end)
 
@@ -674,6 +802,24 @@ function BuildPanel:Close()
 	end
 end
 
+-- Generic: title/body wording and what happens on confirm are entirely the
+-- caller's call (BuildController) -- this module only displays, per its own
+-- header. confirmColor tints the Confirm button, so Rebirth (magenta) and
+-- Ultimate (gold) read as visually distinct actions, not the same dialog
+-- reused blindly.
+function BuildPanel:ShowConfirm(
+	title: string,
+	body: string,
+	confirmColor: Color3,
+	onConfirm: () -> ()
+)
+	self._confirmTitle.Text = title
+	self._confirmBody.Text = body
+	self._confirmButton:SetColor(confirmColor)
+	self._pendingConfirm = onConfirm
+	self._confirm.Visible = true
+end
+
 -- Toggles the info popup for one module's "?" badge: tapping the same
 -- badge again closes it, tapping a different one just swaps the text.
 function BuildPanel:_showInfo(definition: ModuleCatalog.ModuleDef)
@@ -703,7 +849,15 @@ function BuildPanel:SetAvailable(available: boolean)
 		self:Close()
 		self._active.Visible = false
 		self._toast.Visible = false
+		self._confirm.Visible = false
+		self._pendingConfirm = nil
 	end
+end
+
+-- Hides the Ultimate button once it's owned: nothing left to buy, and the
+-- HUD already shows it's active.
+function BuildPanel:SetUltimateOwned(owned: boolean)
+	self._ultimateButton.Root.Visible = not owned
 end
 
 function BuildPanel:SetCategory(name: string)

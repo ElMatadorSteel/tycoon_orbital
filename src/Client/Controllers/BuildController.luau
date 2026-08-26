@@ -970,6 +970,38 @@ function BuildController:Start()
 	self._panel.onReturnToLobby = function()
 		Net.ReturnToLobby:InvokeServer()
 	end
+	self._panel.onRebirthRequested = function()
+		-- The free rebirth's own bonus alone -- deliberately never blended
+		-- with Ultimate or EarlyRebirth's own wording: those are separate,
+		-- unrelated purchases (Ultimate boosts production regardless of
+		-- rebirths; EarlyRebirth only changes WHEN a rebirth is allowed,
+		-- never by how much).
+		local percent = math.floor(Balance.Rebirth.BonusPerRebirth * 100)
+		self._panel:ShowConfirm(
+			"RENAISSANCE ?",
+			`Ajoute +{percent}% de production, cumulable à chaque renaissance -- indépendant de tes autres bonus (Ultimate, Renaissance anticipée). Réinitialise ta station ET tes crédits. Cette action est irréversible.`,
+			Theme.Function.Rebirth,
+			function()
+				local ok, reason = Net.RebirthStation:InvokeServer()
+				self._panel:Toast(if ok then "Renaissance !" else tostring(reason), not ok)
+			end
+		)
+	end
+	self._panel.onUltimateRequested = function()
+		self._panel:ShowConfirm(
+			"ULTIMATE",
+			`Multiplie TOUTE la production par x{Balance.Rebirth.UltimateMultiplier}, en permanence -- indépendant des renaissances.`,
+			Theme.Function.Ultimate,
+			function()
+				-- No real Roblox Game Pass exists yet for this: grants it
+				-- directly, the same dev-only path the Dev Mode panel uses,
+				-- until a real Game Pass is created and this is swapped for
+				-- an actual MarketplaceService purchase prompt.
+				local ok, reason = Net.DevSetPass:InvokeServer("Ultimate", true)
+				self._panel:Toast(if ok then "Ultimate débloqué !" else tostring(reason), not ok)
+			end
+		)
+	end
 
 	self._panel:SetCredits(0)
 	-- Always starts in the lobby; the server will confirm.
@@ -981,6 +1013,8 @@ function BuildController:Start()
 		elseif key == "Credits" then
 			self._credits = value :: number
 			self._panel:SetCredits(self._credits)
+		elseif key == "HasUltimate" then
+			self._panel:SetUltimateOwned(value == true)
 		end
 	end)
 
@@ -993,6 +1027,7 @@ function BuildController:Start()
 		self._credits = initialCredits :: number
 		self._panel:SetCredits(self._credits)
 	end
+	self._panel:SetUltimateOwned(State.get("HasUltimate") == true)
 
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		self:_onInput(input, gameProcessed)

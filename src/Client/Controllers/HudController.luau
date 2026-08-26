@@ -29,6 +29,7 @@ local function fromShared(path: string): any
 	return "../../Shared/" .. path
 end
 
+local Balance = require(fromShared("Balance"))
 local State = require("../State")
 local GainFeed = require("../UI/GainFeed")
 local Theme = require("../UI/Theme")
@@ -92,10 +93,40 @@ function HudController:Start()
 		Parent = gui,
 	})
 
+	-- Two INDEPENDENT lines, deliberately never merged into one: the free
+	-- rebirth count/bonus, Ultimate, and the EarlyRebirth pass are three
+	-- unrelated things (a rebirth's own +25% has nothing to do with owning
+	-- Ultimate, and EarlyRebirth only ever changes WHEN you can rebirth,
+	-- never by how much) -- showing them as one blended "(x1.88) · Ultimate"
+	-- line reads as if Ultimate caused that number. Each line is only shown
+	-- once it means something, so a player who hasn't touched any of this
+	-- sees neither.
+	local rebirthCount = Theme.caption({
+		Name = "RebirthCount",
+		Position = UDim2.fromOffset(SPACE.xl + SPACE.md, SPACE.xl + PURSE_HEIGHT + 2 + 22),
+		Size = UDim2.fromOffset(WIDTH, 18),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = Theme.Function.Rebirth,
+		Text = "",
+		Visible = false,
+		Parent = gui,
+	})
+
+	local rebirthPasses = Theme.caption({
+		Name = "RebirthPasses",
+		Position = UDim2.fromOffset(SPACE.xl + SPACE.md, SPACE.xl + PURSE_HEIGHT + 2 + 22 + 18),
+		Size = UDim2.fromOffset(WIDTH, 18),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = Theme.Function.Rebirth,
+		Text = "",
+		Visible = false,
+		Parent = gui,
+	})
+
 	----------------------------------------------------------------------
 	-- The three gauges, each in its own capsule
 
-	local top = SPACE.xl + PURSE_HEIGHT + 2 + 22 + SPACE.sm
+	local top = SPACE.xl + PURSE_HEIGHT + 2 + 22 + 18 + 18 + SPACE.sm
 	local function pill(index: number, caption: string, color: Color3, image: string)
 		return Theme.gaugePill({
 			Name = caption,
@@ -129,12 +160,59 @@ function HudController:Start()
 
 	----------------------------------------------------------------------
 
+	local function refreshRebirthLine()
+		local onStation = State.get("Location") == "Station"
+		local rebirths = (State.get("Rebirths") :: number?) or 0
+
+		if not onStation or rebirths <= 0 then
+			rebirthCount.Visible = false
+		else
+			-- The free rebirth bonus's actual CURRENT result (25% per
+			-- rebirth banked so far), not the flat per-rebirth rate --
+			-- never mixed with Ultimate's own multiplier below (a separate,
+			-- unrelated purchase).
+			local percent = math.floor(Balance.Rebirth.BonusPerRebirth * 100 * rebirths)
+			rebirthCount.Text = `Renaissances : {rebirths} (+{percent}%)`
+			rebirthCount.Visible = true
+		end
+
+		if not onStation then
+			rebirthPasses.Visible = false
+			return
+		end
+
+		local hasUltimate = State.get("HasUltimate") == true
+		local hasEarlyPass = State.get("HasEarlyRebirth") == true
+		if not hasUltimate and not hasEarlyPass then
+			rebirthPasses.Visible = false
+			return
+		end
+
+		-- Two independent, unrelated purchases -- Ultimate boosts production
+		-- regardless of rebirths; EarlyRebirth only ever changes WHEN a
+		-- rebirth is allowed, never by how much. Listed separately, never
+		-- combined into one number.
+		local parts = {}
+		if hasUltimate then
+			table.insert(parts, `Ultimate actif (x{Balance.Rebirth.UltimateMultiplier})`)
+		end
+		if hasEarlyPass then
+			table.insert(
+				parts,
+				`Renaissance dès niv. {Balance.Rebirth.EarlyThreshold} débloquée`
+			)
+		end
+		rebirthPasses.Text = table.concat(parts, "   ·   ")
+		rebirthPasses.Visible = true
+	end
+
 	local function setOnStation(onStation: boolean)
 		income.Visible = onStation
 		modules.Visible = onStation
 		for _, row in rows do
 			row.Root.Visible = onStation
 		end
+		refreshRebirthLine()
 	end
 	setOnStation(State.get("Location") == "Station")
 
@@ -216,6 +294,13 @@ function HudController:Start()
 			local sunlight = value :: number
 			rows.sun.Gauge:SetRatio(sunlight)
 			rows.sun.Value.Text = if sunlight < 0.05 then "ÉCLIPSE" else "SOLEIL"
+		elseif
+			key == "Rebirths"
+			or key == "GlobalBoost"
+			or key == "HasUltimate"
+			or key == "HasEarlyRebirth"
+		then
+			refreshRebirthLine()
 		end
 	end)
 

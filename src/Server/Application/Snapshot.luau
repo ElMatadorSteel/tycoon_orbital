@@ -38,6 +38,12 @@ local Simulation = require(fromShared("Domain/Production/Simulation"))
 export type CreditsSnapshot = { Credits: number }
 export type ObjectiveSnapshot = { Objective: number }
 export type LocationSnapshot = { Location: string }
+export type RebirthSnapshot = {
+	Rebirths: number,
+	HasUltimate: boolean,
+	HasEarlyRebirth: boolean,
+	GlobalBoost: number,
+}
 export type ProductionSnapshot = {
 	Sunlight: number,
 	Efficiency: number,
@@ -64,6 +70,22 @@ end
 -- gates whether the client shows build/HUD UI at all.
 function Snapshot.location(value: string): LocationSnapshot
 	return { Location = value }
+end
+
+-- globalBoost is passed in already computed (Rebirth.multiplier), not
+-- recomputed here: this file only names shapes, it doesn't own rules.
+function Snapshot.rebirth(
+	rebirths: number,
+	hasUltimate: boolean,
+	hasEarlyRebirth: boolean,
+	globalBoost: number
+): RebirthSnapshot
+	return {
+		Rebirths = rebirths,
+		HasUltimate = hasUltimate,
+		HasEarlyRebirth = hasEarlyRebirth,
+		GlobalBoost = globalBoost,
+	}
 end
 
 function Snapshot.production(stats: {

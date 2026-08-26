@@ -21,6 +21,18 @@ local DEFINITIONS = {
 	UpgradeModule = "RemoteFunction",
 	MoveModule = "RemoteFunction",
 	ReturnToLobby = "RemoteFunction",
+	RebirthStation = "RemoteFunction",
+	-- Only ever bound server-side when Bootstrap was built in development
+	-- mode (see Container.luau's `development` flag) -- exist as Instances
+	-- either way (Net.luau always creates every remote listed here), they
+	-- just never receive an OnServerInvoke outside Studio, so an
+	-- InvokeServer call against any of these in production simply
+	-- times out/errors.
+	DevSetPass = "RemoteFunction",
+	DevSetRebirths = "RemoteFunction",
+	DevGiveCredits = "RemoteFunction",
+	DevSetUnlimitedMoney = "RemoteFunction",
+	DevResetAll = "RemoteFunction",
 
 	-- server -> client, one-off notifications -- the transport behind
 	-- Ports.Notifier (a "+150" gain popup, a completed-objective banner).

@@ -47,6 +47,10 @@ local WATCHED = {
 	"HeatLoad",
 	"HeatCapacity",
 	"Income",
+	"Rebirths",
+	"HasUltimate",
+	"HasEarlyRebirth",
+	"GlobalBoost",
 }
 
 local State = {}

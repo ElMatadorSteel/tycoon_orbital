@@ -39,6 +39,11 @@ export type StepParams = {
 	heatRules: HeatRules,
 	resourceValues: ResourceValues,
 	upgradeRules: ModuleCatalog.UpgradeRules,
+	-- Rebirth's own permanent multiplier (plus Ultimate, if owned) -- see
+	-- Domain/Rebirth/Rebirth.luau. A second, session-wide boost stacked on
+	-- top of each module's own level boost, applied at exactly the same
+	-- places (never consumption): 1 when neither applies.
+	globalBoost: number,
 }
 
 export type PowerStats =
@@ -101,8 +106,9 @@ function Simulation.step(params: StepParams): StepResult
 		-- A level only ever increases what a module PRODUCES, never what it
 		-- consumes (Balance.Upgrade's own rule) -- so this multiplies power
 		-- only in the producing branch, never heat or the consuming branch,
-		-- below.
+		-- below. Rebirth's globalBoost rides along on exactly the same rule.
 		local boost = ModuleCatalog.levelMultiplier(placement.level, params.upgradeRules)
+			* params.globalBoost
 
 		if definition.power > 0 then
 			-- Only solar panels depend on the sun; the core always runs.
@@ -163,6 +169,7 @@ function Simulation.step(params: StepParams): StepResult
 			end
 			local rate = definition.rate
 				* ModuleCatalog.levelMultiplier(placement.level, params.upgradeRules)
+				* params.globalBoost
 			if placement.id == "OreCollector" then
 				oreRate += rate
 			elseif placement.id == "Smelter" then

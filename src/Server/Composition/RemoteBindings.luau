@@ -68,6 +68,52 @@ function RemoteBindings.bind(container: any)
 		container.useCases.returnToLobby:run(player.UserId)
 		return true, nil
 	end
+
+	Net.RebirthStation.OnServerInvoke = function(player: Player)
+		return respond(container.useCases.rebirthStation:run(player.UserId))
+	end
+
+	-- Only bound when Container was built in development mode -- see its
+	-- own header. A client InvokeServer against any of these in production
+	-- hits an Instance with no OnServerInvoke callback set, which errors out
+	-- rather than doing anything.
+	if container.useCases.devSetPass then
+		Net.DevSetPass.OnServerInvoke = function(player: Player, passId: string, enabled: boolean)
+			return respond(container.useCases.devSetPass:run(player.UserId, passId, enabled))
+		end
+	end
+	if container.useCases.devSetRebirths then
+		Net.DevSetRebirths.OnServerInvoke = function(
+			player: Player,
+			count: number,
+			resetStation: boolean
+		)
+			return respond(
+				container.useCases.devSetRebirths:run(player.UserId, count, resetStation)
+			)
+		end
+	end
+	if container.useCases.devSetUnlimitedMoney then
+		Net.DevSetUnlimitedMoney.OnServerInvoke = function(player: Player, enabled: boolean)
+			return respond(container.useCases.devSetUnlimitedMoney:run(player.UserId, enabled))
+		end
+	end
+	if container.useCases.devResetAll then
+		Net.DevResetAll.OnServerInvoke = function(player: Player)
+			return respond(container.useCases.devResetAll:run(player.UserId))
+		end
+	end
+	-- addCredits is an ordinary, always-wired use case (not dev-only on its
+	-- own) -- only the REMOTE that lets a client trigger it arbitrarily is
+	-- gated to development mode; nothing else has ever called it before now.
+	if container.development then
+		Net.DevGiveCredits.OnServerInvoke = function(player: Player, amount: number)
+			if typeof(amount) ~= "number" or amount ~= amount then
+				return false, "invalid amount"
+			end
+			return true, container.useCases.addCredits:run(player.UserId, amount)
+		end
+	end
 end
 
 return RemoteBindings
