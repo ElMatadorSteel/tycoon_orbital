@@ -77,3 +77,62 @@ describe("Placement.canRemove", function()
 		expect(result.ok).toBeFalsy()
 	end)
 end)
+
+describe("Placement.canMove", function()
+	local Grid = require(Domain.Grid.Grid)
+
+	-- A real "Corridor" placed by hand (canMove looks its definition up from
+	-- the real ModuleCatalog by id, unlike canPlace, which takes one as a
+	-- parameter -- so this needs a real catalogue id, not the CORRIDOR/CORE
+	-- fixtures above).
+	local function stationWithCorridor(): Placement.Station
+		local station = Placement.initial()
+		local placement = { id = "Corridor", x = 1, y = -1, rotation = 0, level = 1 }
+		station.occupancy[Grid.key(1, -1)] = placement
+		table.insert(station.placements, placement)
+		return station
+	end
+
+	it("refuses when there is nothing at the given cell", function()
+		local station = Placement.initial()
+		local result = Placement.canMove(station, 4, 4, 5, 5, 0, GRID_RULES)
+		expect(result.ok).toBeFalsy()
+	end)
+
+	it("refuses to move the unique core", function()
+		local station = Placement.initial()
+		local result = Placement.canMove(station, -1, -1, 5, 5, 0, GRID_RULES)
+		expect(result.ok).toBeFalsy()
+	end)
+
+	it("accepts a move onto a free cell still touching the station", function()
+		local station = stationWithCorridor()
+		-- (0,-2) is free and orthogonally touches Core's (0,-1) cell.
+		local result = Placement.canMove(station, 1, -1, 0, -2, 0, GRID_RULES)
+		expect(result.ok).toBeTruthy()
+	end)
+
+	it("does not block a module from moving onto its own current cell", function()
+		local station = stationWithCorridor()
+		local result = Placement.canMove(station, 1, -1, 1, -1, 0, GRID_RULES)
+		expect(result.ok).toBeTruthy()
+	end)
+
+	it("refuses a destination overlapping another module", function()
+		local station = stationWithCorridor()
+		local result = Placement.canMove(station, 1, -1, -1, -1, 0, GRID_RULES)
+		expect(result.ok).toBeFalsy()
+	end)
+
+	it("refuses a destination touching nothing", function()
+		local station = stationWithCorridor()
+		local result = Placement.canMove(station, 1, -1, 4, 4, 0, GRID_RULES)
+		expect(result.ok).toBeFalsy()
+	end)
+
+	it("refuses a destination outside the grid radius", function()
+		local station = stationWithCorridor()
+		local result = Placement.canMove(station, 1, -1, GRID_RULES.radius + 1, 0, 0, GRID_RULES)
+		expect(result.ok).toBeFalsy()
+	end)
+end)

@@ -21,6 +21,7 @@ menu, embark, all verified live — see Stage 8 below). New work from here on is
 work on top of this architecture, not migration. Concretely, as things stand:
 
 **Done (Stage 1 — tooling, Profile, Economy):**
+
 - Full local toolchain installed and working: `rokit.toml` pins `rojo 7.5.1`, `lune 0.9.3`,
   `selene 0.31.0`, `stylua 2.5.2`; `scripts/setup.ps1` downloads them straight from GitHub
   Releases into `.tools/` (git-ignored) without requiring Rokit itself to be installed — see
@@ -28,16 +29,17 @@ work on top of this architecture, not migration. Concretely, as things stand:
   prefix and writes `roblox.yml` itself rather than to stdout, etc.).
 - `default.project.json` maps only `src/Shared → ReplicatedStorage.Shared`,
   `src/Server → ServerScriptService.Server`, `src/Client → StarterPlayer.StarterPlayerScripts.
-  Client` — deliberately never `Workspace` or `ReplicatedStorage` at the root, so a future
+Client` — deliberately never `Workspace` or `ReplicatedStorage` at the root, so a future
   `rojo serve` cannot delete `ModuleModels`/`Assets`/the runtime `Remotes` folder.
   `scripts/{setup,test,check,serve}.ps1` all exist and work; `./scripts/check.ps1` (format +
   lint + `rojo build` + tests) is green.
 - `Profile` and `Economy`: `src/Shared/Domain/{Support/Result,Profile/Profile,
-  Economy/Credits}.luau`, `src/Server/Application/UseCases/{SpendCredits,AddCredits}.luau`,
+Economy/Credits}.luau`, `src/Server/Application/UseCases/{SpendCredits,AddCredits}.luau`,
   `src/Server/Adapters/{Persistence/{DataStoreProfileRepository,InMemoryProfileRepository},
-  Roblox/SystemClock}.luau`.
+Roblox/SystemClock}.luau`.
 
 **Done (Stage 2 — Grid, module catalogue, station placement/upgrade rules):**
+
 - `src/Shared/Domain/Grid/Grid.luau` — pure grid maths, no `fromWorld` (that one is inherently
   CFrame-based, stays a future Client Adapter concern).
 - `src/Shared/Domain/Station/{ModuleCatalog,Placement}.luau` — the full 10-module catalogue
@@ -57,6 +59,7 @@ work on top of this architecture, not migration. Concretely, as things stand:
   yet" below.
 
 **Done (Stage 3 — production simulation, objective chain):**
+
 - `src/Shared/Domain/Station/Network.luau` — resource-network connectivity (BFS over
   `carries`-flagged adjacency), moved to sit with the other Station rules since both Production
   and Objectives need it, not just Production.
@@ -70,7 +73,7 @@ work on top of this architecture, not migration. Concretely, as things stand:
 - `src/Server/Application/SessionRegistry.luau` (new, not a port — see ARCHITECTURE.md's
   "volatile state never reaches the profile"; holds per-tick charge/pendingCredit and
   per-session "has embarked") + `UseCases/{EmbarkStation,RunProductionTick,
-  CheckObjectiveProgress}.luau`.
+CheckObjectiveProgress}.luau`.
 - `Ports.Clock` extended with `monotonic()` (backed by `os.clock()` in `SystemClock`, alongside
   the existing epoch `now()`/`os.time()`) — the orbital phase needed the second of
   ARCHITECTURE.md's "two clocks", the first Stage to actually need it.
@@ -82,6 +85,7 @@ work on top of this architecture, not migration. Concretely, as things stand:
   concern, this stage never touches it either.
 
 **Done (Stage 4 — Replication: attributes + notifications):**
+
 - Scoped down from the original "3D + Replication" plan for this stage: Studio had zero
   connected instances the whole time (`list_roblox_studios` returned `[]`), so the 3D
   scene-building work (which needs the real `ModuleModels` templates to build against and Play
@@ -90,7 +94,7 @@ work on top of this architecture, not migration. Concretely, as things stand:
   level) does NOT need custom replication once Stage 5 makes it a real Instance — ordinary
   Roblox instance replication already carries it to the client for free (this is how
   `LabelController` already works client-side today, watching `Workspace.Stations.*` for new
-  children). Only *scalar* state (credits, objective index, production stats, location) needed
+  children). Only _scalar_ state (credits, objective index, production stats, location) needed
   an explicit port — that's all this stage builds.
 - `src/Server/Application/Snapshot.luau` (new — matches ARCHITECTURE.md's named `Snapshot` file
   exactly): one small builder function per concern (`credits`/`objective`/`location`/
@@ -98,7 +102,7 @@ work on top of this architecture, not migration. Concretely, as things stand:
   just changed, since `SetAttribute` on one key never touches another. Everything returned is
   attribute-compatible (numbers/strings only).
 - `Ports.StatsPublisher` (state; production adapter `Adapters/Replication/
-  AttributeStatsPublisher.luau` calls `Player:SetAttribute`) and `Ports.Notifier` (one-off
+AttributeStatsPublisher.luau` calls `Player:SetAttribute`) and `Ports.Notifier` (one-off
   messages; production adapter `Adapters/Replication/RemoteNotifier.luau` — since
   `Net.luau`/`RemoteBindings` doesn't exist yet, this adapter creates and owns its own
   `ReplicatedStorage.Replication.Notify` RemoteEvent itself, mirroring how the legacy
@@ -122,6 +126,7 @@ work on top of this architecture, not migration. Concretely, as things stand:
   into the existing station/production integration specs.
 
 **Done (Stage 5 — 3D scene building):**
+
 - `src/Shared/Domain/Plots/Layout.luau` — the plot fan-layout maths (pure, plain `{x,y,z}`
   positions, ported from `PlotService:Start()`'s loop), Lune-tested with pinned reference
   points (`spread = 0` collapses every angle to 0, giving exact literal values without needing
@@ -140,7 +145,7 @@ work on top of this architecture, not migration. Concretely, as things stand:
   `setModuleLevel`) wired into `PlaceModule`/`RemoveModule`/`UpgradeModule`/`EmbarkStation`.
   `EmbarkStation` now returns a `Result` (can fail: "every station is occupied", matching
   legacy) instead of always succeeding. New `ReturnToLobby` use case (publishes `Location =
-  "Lobby"` only — ported faithfully from the legacy remote, which does **not** release the
+"Lobby"` only — ported faithfully from the legacy remote, which does **not** release the
   plot; only a `PlayerRemoving` teardown does, and that wiring still doesn't exist — see below).
 - `Composition/Bootstrap.luau` now also schedules the recurring simulation tick (`task.spawn`
   loop calling `runProductionTick`/`checkObjectiveProgress` for every connected player every
@@ -162,6 +167,7 @@ directly (`require(Config)`, not `require(Config.Balance)` — see `tests/harnes
 something to "fix" later — don't recreate a `Shared/Config/` folder.
 
 **Done (Stage 6, server-networking half only — the client is still open):**
+
 - `src/Shared/Net.luau` — the shared network contract; ported from the legacy
   `Shared/Remotes.lua`'s self-creating pattern almost verbatim, just renamed and under
   `ReplicatedStorage.Net` instead of `.Remotes` (so it coexists with the untouched legacy
@@ -185,6 +191,7 @@ something to "fix" later — don't recreate a `Shared/Config/` folder.
   and crash on `game:GetService`).
 
 **Done (rest of Stage 6's server side — `Teleporter` + Lobby wiring, in a follow-up pass):**
+
 - `Ports.Teleporter` (`sendToLobby`/`sendToStation` — deliberately just two named actions, not
   a generic "go to this CFrame": Application never has a CFrame to hand it) +
   `Adapters/Roblox/CharacterTeleporter.luau`, ported from the teleport half of legacy
@@ -200,10 +207,10 @@ something to "fix" later — don't recreate a `Shared/Config/` folder.
   `expect()` pattern as `LobbyService:_resolve`) — **confirmed live via `inspect_instance`
   against the actual Studio scene, still matches exactly, no drift**. Wires
   `LaunchPad.ProximityPrompt.Triggered → embarkStation:run`, `Players.CharacterAutoLoads =
-  false` + a `PlayerAdded` welcome (spawn in the lobby), and a `PlayerRemoving` teardown
+false` + a `PlayerAdded` welcome (spawn in the lobby), and a `PlayerRemoving` teardown
   (final profile save as a safety net — every mutation already saves immediately, unlike
   legacy's 3-moments-only design — plus `profileRepository:release`/`stationRepository
-  :release`/`sceneBuilder:releasePlot`/`sessionRegistry:release`). This is the piece that
+:release`/`sceneBuilder:releasePlot`/`sessionRegistry:release`). This is the piece that
   makes `EmbarkStation` reachable by a real player, at last.
 - `InMemoryStationRepository` gained a `:release(userId)` (was missing since Stage 2).
 - 124 Lune specs pass, including `Fakes.RecordingTeleporter` and new assertions on
@@ -213,10 +220,11 @@ something to "fix" later — don't recreate a `Shared/Config/` folder.
   which finished the client that was the last blocker.
 
 **Done (Stage 7 — the Client):**
+
 - Full port of `StarterPlayer.StarterPlayerScripts.Client` into `src/Client`, following
   ARCHITECTURE.md's target layout exactly: `State.luau` (new), `Controllers/
-  {HudController,BuildController,ObjectiveController,LabelController}.luau`, `UI/
-  {Theme,BuildPanel,GainFeed,MissionComplete,ModuleVisuals}.luau`, `Bootstrap.client.luau` (the
+{HudController,BuildController,ObjectiveController,LabelController}.luau`, `UI/
+{Theme,BuildPanel,GainFeed,MissionComplete,ModuleVisuals}.luau`, `Bootstrap.client.luau` (the
   `.client.luau` suffix is what makes Rojo sync it as a `LocalScript` — confirmed by the
   `rojo build` in `check.ps1`, which produces exactly one `LocalScript` in the built place).
 - `src/Client/State.luau` (new, not in the legacy game at all): the one place that reads
@@ -241,7 +249,7 @@ something to "fix" later — don't recreate a `Shared/Config/` folder.
 - **A station's placed modules replicate as ordinary Instances, not a snapshot payload — but the
   client still needs each one's x/y/rotation, and nothing was publishing those.** The legacy
   client rebuilt its occupancy map from a `StationChanged` RemoteEvent payload; the new
-  architecture deliberately has no equivalent (Stage 4's reframe: a placed module *is* an
+  architecture deliberately has no equivalent (Stage 4's reframe: a placed module _is_ an
   Instance, ordinary replication carries id/level for free via the `ModuleId`/`Level` attributes
   `StationSceneBuilder` already stamped). But x/y/rotation were never stamped anywhere
   client-readable, and `BuildController` needs them to reconstruct occupancy for its
@@ -256,7 +264,7 @@ something to "fix" later — don't recreate a `Shared/Config/` folder.
   `folder:GetAttribute("Origin")`.
 - **A client with the server's Attributes/Notify design has no equivalent of a full initial
   snapshot, and nothing was publishing one.** `RunProductionTick`/`CheckObjectiveProgress` only
-  publish `Credits`/`Objective` when they *change* — a freshly-joined player would read `nil` off
+  publish `Credits`/`Objective` when they _change_ — a freshly-joined player would read `nil` off
   both attributes until their first sale or objective completion, since nothing publishes the
   loaded profile's starting values. Fixed in `Bootstrap.luau`'s `welcome(player)`: it now loads
   the profile and publishes `Snapshot.credits`/`Snapshot.objective` once, before
@@ -272,7 +280,7 @@ something to "fix" later — don't recreate a `Shared/Config/` folder.
 - One bug fixed while porting, not carried forward: the legacy `Theme.lua`'s `Theme.corner`
   function body had `Theme.gaugePill`'s entire ~90-line definition nested dead-code inside it (a
   copy-paste artifact — Luau allows a nested `function` statement anywhere, so it parsed, but
-  `Theme.gaugePill` would only become defined the first time `Theme.corner` was ever *called*,
+  `Theme.gaugePill` would only become defined the first time `Theme.corner` was ever _called_,
   not at module load). Fixed by moving `Theme.gaugePill` back out to be its own top-level
   function; `Theme.corner` is back to its actual 3-line body. Everything else in `Theme.luau`
   ported behavior-for-behavior.
@@ -285,10 +293,11 @@ something to "fix" later — don't recreate a `Shared/Config/` folder.
   service boundaries was fixed — see that stage for what broke and why.
 
 **Done (Stage 8 — the cutover):**
+
 - `rojo serve` connected to the live Studio place via the "Rojo Foundation" Studio plugin (there
   is no separate "rojo-rbx" plugin listing any more — this is the current official one). First
   connection attempt failed with a protocol-version mismatch (`ApiContext:28: attempt to index
-  number with 'protocolVersion'`) because the pinned CLI was still Rojo 7.5.1 against a materially
+number with 'protocolVersion'`) because the pinned CLI was still Rojo 7.5.1 against a materially
   newer plugin — fixed by bumping `rokit.toml`'s pin to **7.7.0** (the actual latest release) and
   re-running `scripts/setup.ps1`; `check.ps1` re-verified green on the new binary before
   reconnecting. **The `rojo-rbx/rojo@7.5.1` pin was stale enough to break the connection outright
@@ -298,22 +307,22 @@ something to "fix" later — don't recreate a `Shared/Config/` folder.
   `Domain`/`Balance`/`Net`/`Signal`/`Icons` (the legacy `Config`/`Remotes`/`Grid`/`ModuleCatalog`/
   `Objectives` ModuleScripts are gone, replaced in place); `ServerScriptService.Server` now holds
   `Adapters`/`Application`/`Composition` (the legacy `Systems`/`Bootstrap` are gone); `StarterPlayer
-  .StarterPlayerScripts.Client` now holds `State`/`Controllers`/`UI`/`Bootstrap` (confirmed synced
+.StarterPlayerScripts.Client` now holds `State`/`Controllers`/`UI`/`Bootstrap` (confirmed synced
   as a real `LocalScript`, resolving Stage 1's open question about the `.client.luau`/`.server.luau`
   suffix convention actually working in this engine — it does). `Workspace.Plots`/`Workspace
-  .Stations`/`Workspace.Scenery.Lobby` were already hand-authored, pre-existing empty scenery (not
+.Stations`/`Workspace.Scenery.Lobby` were already hand-authored, pre-existing empty scenery (not
   created by legacy scripts at runtime), so `StationSceneBuilder`'s/`Bootstrap`'s `WaitForChild`
   calls resolve immediately rather than hanging.
 - **Found and fixed: nothing actually called `Composition/Bootstrap.start()`.** Every file under
   `src/Server` is a `ModuleScript`; unlike the Client (which got `Bootstrap.client.luau` in Stage
   7), the server side never got an equivalent entry-point `Script`. Fixed by adding
   `src/Server/Bootstrap.server.luau` — the only `Script` directly under `ServerScriptService
-  .Server`, mirroring the legacy `Server.Bootstrap`'s role, requiring `./Composition/Bootstrap` and
+.Server`, mirroring the legacy `Server.Bootstrap`'s role, requiring `./Composition/Bootstrap` and
   calling `.start()`. This is the piece that makes the whole server side actually run, not just
   compile.
 - **Found and fixed: relative string-requires do not cross Rojo's service boundaries.** Confirmed
   live the moment Play mode first ran: `error requiring "../../Shared/Balance": could not resolve
-  child component "Shared"`. Root cause (this was Stage 1's long-deferred open question, and the
+child component "Shared"`. Root cause (this was Stage 1's long-deferred open question, and the
   answer is more specific than "works" or "doesn't"): under Lune, `src/Server` and `src/Shared` are
   siblings on disk, so `require("../../Shared/Balance")` resolves correctly by walking the
   filesystem; but Rojo maps them to **different services** (`ServerScriptService.Server` vs
@@ -376,6 +385,7 @@ something to "fix" later — don't recreate a `Shared/Config/` folder.
   any legacy system this migration touched). Worth a tidy-up pass later; not blocking anything.
 
 **Load-bearing design points, apply them to every later port:**
+
 - **Domain code takes config as parameters, never `require`s `Shared/Balance` itself.**
   `Profile.blank(rules)`/`Profile.sanitize(raw, rules)` take a small `Rules` table; callers
   (Adapters, Composition) read the real `Balance` module and pass it in. This is what makes
@@ -445,6 +455,7 @@ something to "fix" later — don't recreate a `Shared/Config/` folder.
   spec, and then fail only in the live engine.**
 
 **Post-cutover fixes (found by actually playing the live-synced place, not by Lune):**
+
 - **The starting core had grid DATA but no 3D Instance.** `Placement.initial()` (and therefore
   `InMemoryStationRepository:load()`) always includes the core in `station.occupancy`/
   `station.placements`, but nothing ever told `StationSceneBuilder` to build its Model —
@@ -484,7 +495,7 @@ something to "fix" later — don't recreate a `Shared/Config/` folder.
   capacity/rate figure came straight off the level-1 base stats regardless of `placement.level`.
   Only found by playing a station with real level-2/3 modules and comparing the HUD numbers by
   hand; every existing Lune spec used level-1 fixtures throughout, so `levelMultiplier(1, ...) ==
-  1` made the bug invisible to the whole suite. Fixed by applying `levelMultiplier` in exactly the
+1` made the bug invisible to the whole suite. Fixed by applying `levelMultiplier` in exactly the
   two places `Balance.Upgrade`'s own rule ("a level only ever increases what a module PRODUCES,
   never what it consumes") says it should: the producing branch of power, `capacity`, and a
   radiator's own heat-capacity contribution in the power/heat loop, and `rate` in the flow-stage
@@ -506,7 +517,7 @@ something to "fix" later — don't recreate a `Shared/Config/` folder.
   which floods that key's DataStore write budget (visible as "DataStore request was added to
   queue... requests will be dropped" spam). Any OTHER action needing to save (upgrading, building,
   spending) then queued behind that flood and could take several seconds — `DataStoreProfile
-  Repository`'s own retry logic waits `retryDelay * attempt` (2s+) between attempts once
+Repository`'s own retry logic waits `retryDelay * attempt` (2s+) between attempts once
   rate-limited. Fixed by having `RunProductionTick` update the in-memory profile (still correct
   for every other use case's next `load()`, since every `ProfileRepository` caches by reference —
   see `DataStoreProfileRepository`'s header) without calling `save()`, and adding the periodic
@@ -514,6 +525,88 @@ something to "fix" later — don't recreate a `Shared/Config/` folder.
   Bootstrap now saves every connected player every `AutosaveInterval` seconds, matching the
   legacy `SaveService`'s three-moments design (periodic + `PlayerRemoving` + every other
   mutation's own immediate save) that this migration had only ever built two thirds of.
+- **The core's saved level reverted to 1 every time a player left and rejoined their station.**
+  `RestoreStation` unconditionally skipped the core with a bare `continue` (its Instance is
+  already built by `claimPlot`, so replaying it as an ordinary placement would double it) — but
+  that skip also threw away the core's saved LEVEL, since `claimPlot` always hardcodes a fresh
+  core Instance at level 1 and the core is upgradable like any other module. Fixed by resyncing
+  just the level inside that same skip branch: if the saved entry's level differs from what's
+  already in `station.occupancy`, bump it there and call `sceneBuilder:setModuleLevel` — still
+  never touching the core's existence, only its level. 2 new Lune specs in
+  `restore_station.spec.luau`.
+- **Hovering to upgrade or demolish a module was unreliable, worse the taller the module and the
+  more oblique the camera angle.** `BuildController` picked the hovered cell the same way it
+  picks an empty cell for placement: intersecting the mouse ray with the station's flat deck
+  plane. That's correct when there's nothing built yet, but wrong for an EXISTING module with
+  real height — what's visually under the cursor (the side or top of a tall Fabricator, say)
+  projects onto a different deck cell than what's actually on screen. Fixed by adding
+  `BuildController:_hoveredEntry()`, a real `workspace:Raycast` against the station folder's
+  Instances (`RaycastParams` with `FilterType = Include`), reading the hit's ancestor Model's
+  `X`/`Y` attributes instead of projecting through the deck. Verified live by comparing the two
+  methods' output for the same mouse position: the deck-plane method computed cell (0,0) for a
+  Fabricator actually standing at (-1,-3), a 3+ cell miss; the raycast method landed exactly on
+  it. `_cellUnderMouse()` (the plane projection) is unchanged and still correct for its one
+  remaining job: picking an empty cell to place a NEW module, where there's nothing to
+  raycast against yet.
+
+## Post-migration feature work
+
+Ordinary feature work on top of the now-complete architecture. Not a migration stage — no more
+of those — but documented with the same level of detail as the stages above, since these are
+still load-bearing design decisions worth not re-litigating.
+
+**Modify mode (move + rotate an already-placed module):**
+
+- A fourth build-menu mode, alongside Build/Upgrade/Demolish: pick up an already-placed module,
+  reposition and reorient it, for free (no cost, no refund — this corrects a misplacement, it
+  isn't an economic action). The core can never be moved: its position at `(-1, -1)` is
+  load-bearing for `EmbarkStation`/`claimPlot`/`Placement.initial()`, all of which assume it.
+- `Domain/Station/Placement.canMove(station, x, y, newX, newY, newRotation, gridRules)` (new):
+  finds the existing placement at `(x, y)` (any cell of a multi-cell module, not just its
+  anchor — a raycast-picked cell), refuses a `definition.unique` module (the core) outright,
+  then validates the destination against a **shallow copy of `station.occupancy` with the
+  module's own current cells cleared** — so a module vacating its old footprint never blocks
+  itself from moving onto a spot overlapping, or identical to, where it already stands (a
+  same-position "move" is a valid no-op, confirmed live against a real 180+ module station).
+  Reuses `Placement.cellsFree`/`touchesStation` unchanged; a destination that doesn't touch the
+  rest of the station is refused exactly like an ordinary placement.
+- `Server/Application/UseCases/MoveModule.luau` (new): load → `Placement.canMove` → mutate the
+  existing `ModulePlacement` in place (`x`/`y`/`rotation`) → `StationProfileSync.apply` →
+  save → `sceneBuilder:removeModule` (at the OLD anchor, captured before the mutation above —
+  the scene builder indexes a model by the anchor it was built at) →
+  `sceneBuilder:placeModule` (at the new anchor, carrying the same `level` along since it's the
+  same placement object). No `StatsPublisher` dependency at all: a move changes no credits, so
+  there is nothing to publish. Wired into `Container.luau` and a new `Net.MoveModule`
+  RemoteFunction bound in `RemoteBindings.luau`, following the exact same shape as
+  `PlaceModule`/`RemoveModule`/`UpgradeModule`.
+- Client (`BuildController`): a new `_modifying`/`_movingFrom` pair of fields sits alongside
+  `_demolishing`/`_upgrading`. Hovering (via the raycast `_hoveredEntry()` above) shows the same
+  action highlight, colored with a new `Theme.Function.Move` (teal) instead of demolish-red or
+  upgrade-amber. Clicking a non-core hovered module "picks it up": this **reuses the ordinary
+  placement ghost machinery** (`self._selected`/`self._rotation`/`_rebuildGhost`/`_updateGhost`)
+  rather than building a parallel preview system — the only two changes needed were in
+  `_canPlace`, which now (a) skips the credit-cost check while `self._movingFrom` is set (a
+  move is free) and (b) excludes the module's own occupancy entries from the "is this cell
+  free" check via a `self._occupancy` reference-equality comparison, mirroring
+  `Placement.canMove`'s vacate-then-check shape on the server. Clicking again while holding a
+  module confirms the move (`Net.MoveModule:InvokeServer`); right-click cancels the pick-up (or
+  exits the mode if nothing is picked up yet), matching Demolish/Upgrade's own right-click
+  convention. All three modes are mutually exclusive by construction: every mode-entry path
+  (`_select`, `_toggleDemolish`, `_toggleUpgrade`, `_toggleModify`) now also clears the other
+  two, and a catalog selection or a mode switch mid-move cancels that move rather than silently
+  abandoning it (`_exitModify`).
+- `BuildPanel`: a fifth dock button ("Modifier", `Icons.Menus["Teleport"]`, teal) between
+  Upgrade and Demolish; the dock's height and every later button's `LayoutOrder` were bumped to
+  fit it. `SetModifying(active)` follows the same shape as `SetUpgrading`/`SetDemolishing`.
+- Live-verified end-to-end in Play mode against a real ~180-module station (not a fresh test
+  station): a no-op move (same position) succeeds, proving the self-vacate logic actually holds
+  under real dense occupancy, not just an empty fixture; a real reposition rebuilds the scene at
+  the new position with the module's level preserved (confirmed via the `Level` attribute); an
+  attempted core move is refused server-side; an invalid destination (occupied) is refused, the
+  in-hand module's ghost is dropped, and the toast shows the server's exact refusal reason with
+  nothing left stray in the scene. 15 new Lune specs across
+  `tests/specs/domain/station/placement.spec.luau` and
+  `tests/specs/application/station_integration.spec.luau`, 156 total.
 
 **Not done yet:** nothing migration-related. `ReplicatedStorage.Remotes` (orphaned legacy remotes
 folder) and `Workspace.Script` (an unrelated pre-existing placeholder) are cosmetic leftovers, not
@@ -525,13 +618,13 @@ codebase: new features go straight into the `src/` architecture above, no more s
 One goal: game rules depend on no Roblox API, so they're testable from a command line in
 milliseconds and replaceable without a rewrite. Arrows point inwards only:
 
-| Layer | May depend on | Never knows about |
-| --- | --- | --- |
-| `Domain` | nothing | Roblox, network, persistence |
-| `Application` | `Domain`, ports | Roblox, instances |
-| `Adapters` | `Domain`, ports, Roblox | the use cases |
-| `Composition` | everything | — |
-| `Client` | `Domain` (read only), `Config`, network contract | server logic |
+| Layer         | May depend on                                    | Never knows about            |
+| ------------- | ------------------------------------------------ | ---------------------------- |
+| `Domain`      | nothing                                          | Roblox, network, persistence |
+| `Application` | `Domain`, ports                                  | Roblox, instances            |
+| `Adapters`    | `Domain`, ports, Roblox                          | the use cases                |
+| `Composition` | everything                                       | —                            |
+| `Client`      | `Domain` (read only), `Config`, network contract | server logic                 |
 
 Enforced in practice with two greps that must return nothing:
 `grep -r "game:GetService" src/Shared/Domain` and `grep -r "Instance.new" src/Server/Application`.
@@ -578,6 +671,7 @@ development-only affordances (dev codes, etc.) are appended by the container onl
 development mode, decided once in the bootstrap via `RunService:IsStudio()`.
 
 Structural decisions that are expensive to reverse, so don't relitigate them per-feature:
+
 - **Progress is measured by the server** — cap credited displacement to what's physically
   reachable in elapsed time; never trust a client-reported gain.
 - **Volatile state never reaches the profile** — anything belonging to one attempt lives in the
@@ -602,13 +696,13 @@ Rojo-based project, tools managed via [Rokit](https://github.com/rojo-rbx/rokit)
 (`rokit.toml` + `rokit install`), or `./scripts/setup.ps1` to fetch Rojo/Lune/Selene/StyLua into
 git-ignored `.tools/` and generate `sourcemap.json`.
 
-| Command | Effect |
-| --- | --- |
-| `./scripts/test.ps1` | Run the whole suite |
-| `./scripts/test.ps1 <filter>` | Run only specs whose path contains the filter |
-| `./scripts/check.ps1` | Format + lint + Rojo build + tests — **run before every commit** |
-| `./scripts/check.ps1 -Fix` | Format instead of checking |
-| `./scripts/serve.ps1` | Serve the project to Roblox Studio (Rojo Connect) |
+| Command                       | Effect                                                           |
+| ----------------------------- | ---------------------------------------------------------------- |
+| `./scripts/test.ps1`          | Run the whole suite                                              |
+| `./scripts/test.ps1 <filter>` | Run only specs whose path contains the filter                    |
+| `./scripts/check.ps1`         | Format + lint + Rojo build + tests — **run before every commit** |
+| `./scripts/check.ps1 -Fix`    | Format instead of checking                                       |
+| `./scripts/serve.ps1`         | Serve the project to Roblox Studio (Rojo Connect)                |
 
 In Studio without DataStore API access, persistence falls back to memory automatically.
 
@@ -629,7 +723,7 @@ a rule needs a Roblox API, it isn't a rule yet — split the decision (domain) f
 call (adapter) behind a port.
 
 Conventions: `PascalCase` modules, one per file, one table returned. **Comments in English**
-going forward, on the *why* (this is a change from the legacy French-comment convention below —
+going forward, on the _why_ (this is a change from the legacy French-comment convention below —
 see "Language convention" note). Business failures go through `Result.ok`/`Result.err`;
 `error()` is reserved for programming bugs. Anything from the network is type-checked before
 use. No player-readable string in a view — words live in the theme module (icons + palette +
@@ -645,7 +739,7 @@ merged in by the container in development mode — never a bypass around the pip
 Commits: [Conventional Commits](https://www.conventionalcommits.org/) —
 `<type>(<scope>): <imperative description>`. Types: `feat`, `fix`, `refactor`, `test`, `docs`,
 `chore`, `perf`. Scopes: `domain`, `application`, `server`, `client`, `monetization`, `ui`,
-`build`. Body says *why* and what was rejected. `./scripts/check.ps1` must be green before every
+`build`. Body says _why_ and what was rejected. `./scripts/check.ps1` must be green before every
 commit.
 
 ## Legacy implementation (historical reference — no longer live)
@@ -677,7 +771,7 @@ There is (still, for now) no local source tree for the game code itself — only
 
 ### Language and comment convention (legacy code only)
 
-Legacy Studio code comments are in **French**, explaining *why* rather than *what*. Preserve
+Legacy Studio code comments are in **French**, explaining _why_ rather than _what_. Preserve
 that style when touching legacy code before it's ported. New code written under `src/` follows
 `DEVELOPMENT.md`'s convention instead: **English**, why-focused. All scripts are `--!strict`.
 
@@ -751,7 +845,7 @@ Read by both server and client; pure data/math, no state:
 
 - **Config** — global settings: economy, save/DataStore, grid, plots, orbit, heat, simulation
   tick rate, and `Upgrade` (module leveling: `MaxLevel`, `GainPerLevel`, `CostFactor`,
-  `MinCost` — a level only ever increases what a module *produces*, never what it consumes).
+  `MinCost` — a level only ever increases what a module _produces_, never what it consumes).
 - **Remotes** — all RemoteEvents/RemoteFunctions from one `DEFINITIONS` table, including
   `UpgradeModule`. Adding a remote is a one-line addition here.
 - **Grid** — pure math for the build grid (cell keys, bounds, world↔cell, neighbours,

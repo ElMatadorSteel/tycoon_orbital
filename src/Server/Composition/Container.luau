@@ -33,6 +33,7 @@ local AddCredits = require("../Application/UseCases/AddCredits")
 local PlaceModule = require("../Application/UseCases/PlaceModule")
 local RemoveModule = require("../Application/UseCases/RemoveModule")
 local UpgradeModule = require("../Application/UseCases/UpgradeModule")
+local MoveModule = require("../Application/UseCases/MoveModule")
 local RestoreStation = require("../Application/UseCases/RestoreStation")
 local EmbarkStation = require("../Application/UseCases/EmbarkStation")
 local ReturnToLobby = require("../Application/UseCases/ReturnToLobby")
@@ -70,6 +71,7 @@ export type Container = {
 		placeModule: any,
 		removeModule: any,
 		upgradeModule: any,
+		moveModule: any,
 		restoreStation: any,
 		embarkStation: any,
 		returnToLobby: any,
@@ -144,6 +146,13 @@ function Container.new(options: { ports: Ports, rules: Rules, sessionRegistry: a
 			sceneBuilder = ports.sceneBuilder,
 			upgradeRules = rules.upgrade,
 		}, UpgradeModule),
+
+		moveModule = setmetatable({
+			profileRepository = ports.profileRepository,
+			stationRepository = ports.stationRepository,
+			sceneBuilder = ports.sceneBuilder,
+			gridRules = rules.grid,
+		}, MoveModule),
 
 		restoreStation = restoreStation,
 

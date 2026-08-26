@@ -19,6 +19,7 @@ local DEFINITIONS = {
 	PlaceModule = "RemoteFunction",
 	RemoveModule = "RemoteFunction",
 	UpgradeModule = "RemoteFunction",
+	MoveModule = "RemoteFunction",
 	ReturnToLobby = "RemoteFunction",
 
 	-- server -> client, one-off notifications -- the transport behind

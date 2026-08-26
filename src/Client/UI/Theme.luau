@@ -54,6 +54,7 @@ Theme.Function = {
 	Lobby = Color3.fromRGB(170, 116, 255),
 	Money = Color3.fromRGB(74, 206, 96),
 	Info = Color3.fromRGB(255, 186, 62),
+	Move = Color3.fromRGB(56, 191, 199),
 }
 
 -- Lighting for the 3D thumbnails. A ViewportFrame has its OWN lighting,

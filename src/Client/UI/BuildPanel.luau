@@ -212,6 +212,7 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 	self.onSelect = nil :: ((string?) -> ())?
 	self.onToggleDemolish = nil :: (() -> ())?
 	self.onToggleUpgrade = nil :: (() -> ())?
+	self.onToggleModify = nil :: (() -> ())?
 	self.onOpenChanged = nil :: ((boolean) -> ())?
 	self.onReturnToLobby = nil :: (() -> ())?
 
@@ -228,7 +229,7 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 		Name = "Dock",
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.new(1, -SPACE.xl, 0.5, 0),
-		Size = UDim2.fromOffset(ICON, ICON_TOTAL * 4 + SPACE.sm * 3),
+		Size = UDim2.fromOffset(ICON, ICON_TOTAL * 5 + SPACE.sm * 4),
 		BackgroundTransparency = 1,
 		Parent = parent,
 	}, {
@@ -259,9 +260,18 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 	})
 	self._upgradeButton.Root.Parent = self._dock
 
+	self._modifyButton = Theme.iconButton({
+		Name = "Modifier",
+		LayoutOrder = 3,
+		Color = FUNCTION.Move,
+		Image = Icons.Menus["Teleport"],
+		Caption = "Modifier",
+	})
+	self._modifyButton.Root.Parent = self._dock
+
 	self._demolishButton = Theme.iconButton({
 		Name = "Demolir",
-		LayoutOrder = 3,
+		LayoutOrder = 4,
 		Color = FUNCTION.Demolish,
 		Image = Icons.Menus["Trash"],
 		Caption = "Démolir",
@@ -270,7 +280,7 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 
 	self._lobbyButton = Theme.iconButton({
 		Name = "Lobby",
-		LayoutOrder = 4,
+		LayoutOrder = 5,
 		Color = FUNCTION.Lobby,
 		Image = Icons.Misc["House"],
 		Caption = "Lobby",
@@ -610,6 +620,11 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 			self.onToggleUpgrade()
 		end
 	end)
+	self._modifyButton.Button.Face.Activated:Connect(function()
+		if self.onToggleModify then
+			self.onToggleModify()
+		end
+	end)
 	self._demolishButton.Button.Face.Activated:Connect(function()
 		if self.onToggleDemolish then
 			self.onToggleDemolish()
@@ -746,6 +761,25 @@ function BuildPanel:SetUpgrading(active: boolean)
 		self._activeIcon.Image = Icons.Stars["Star"]
 		self._activeName.Text = "Amélioration"
 		self._activeHint.Text = "clic sur un module   ·   clic droit annuler"
+	else
+		self._activeHint.Text = "R pivoter   ·   clic droit annuler"
+		self._active.Visible = self._selected ~= nil
+		if self._selected then
+			self:SetSelected(self._selected)
+		end
+	end
+end
+
+function BuildPanel:SetModifying(active: boolean)
+	self._modifyButton:SetLifted(active)
+
+	if active then
+		self._active.Visible = true
+		self._activeBadge.BackgroundColor3 = FUNCTION.Move
+		self._activeIcon.Image = Icons.Menus["Teleport"]
+		self._activeName.Text = "Modification"
+		self._activeHint.Text =
+			"clic pour saisir/déposer   ·   R pivoter   ·   clic droit annuler"
 	else
 		self._activeHint.Text = "R pivoter   ·   clic droit annuler"
 		self._active.Visible = self._selected ~= nil

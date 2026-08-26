@@ -53,6 +53,17 @@ function RemoteBindings.bind(container: any)
 		return respond(container.useCases.upgradeModule:run(player.UserId, x, y))
 	end
 
+	Net.MoveModule.OnServerInvoke = function(
+		player: Player,
+		x: number,
+		y: number,
+		newX: number,
+		newY: number,
+		rotation: number?
+	)
+		return respond(container.useCases.moveModule:run(player.UserId, x, y, newX, newY, rotation))
+	end
+
 	Net.ReturnToLobby.OnServerInvoke = function(player: Player)
 		container.useCases.returnToLobby:run(player.UserId)
 		return true, nil

@@ -204,4 +204,101 @@ describe("Station use cases (real Container, fake ports)", function()
 			expect(sceneBuilder.levelCalls[1]).toEqual({ userId = userId, x = 1, y = -1, level = 2 })
 		end)
 	end)
+
+	describe("MoveModule", function()
+		it("moves a module and keeps the profile in sync", function()
+			container.useCases.placeModule:run(userId, "Corridor", 1, -1, 0)
+
+			local result = container.useCases.moveModule:run(userId, 1, -1, 0, -2, 0)
+			expect(result.ok).toBeTruthy()
+
+			local station = container.ports.stationRepository:load(userId)
+			expect(#station.placements).toBe(2) -- still just core + the same corridor
+
+			local profile = container.ports.profileRepository:load(userId)
+			local moved
+			for _, entry in profile.modules do
+				if entry.id == "Corridor" then
+					moved = entry
+				end
+			end
+			expect(moved ~= nil).toBeTruthy()
+			expect((moved :: any).x).toBe(0)
+			expect((moved :: any).y).toBe(-2)
+		end)
+
+		it("does not charge or refund anything for a move", function()
+			container.useCases.placeModule:run(userId, "Corridor", 1, -1, 0)
+			local before = container.ports.profileRepository:load(userId).credits
+
+			container.useCases.moveModule:run(userId, 1, -1, 0, -2, 0)
+
+			local after = container.ports.profileRepository:load(userId).credits
+			expect(after).toBe(before)
+		end)
+
+		it("preserves the module's level across a move", function()
+			container.useCases.placeModule:run(userId, "SolarPanel", 1, -1, 0)
+			container.useCases.upgradeModule:run(userId, 1, -1) -- now level 2
+
+			container.useCases.moveModule:run(userId, 1, -1, 0, -2, 0)
+
+			local station = container.ports.stationRepository:load(userId)
+			local moved
+			for _, placement in station.placements do
+				if placement.id == "SolarPanel" then
+					moved = placement
+				end
+			end
+			expect(moved ~= nil).toBeTruthy()
+			expect((moved :: any).level).toBe(2)
+		end)
+
+		it("refuses to move the unique core", function()
+			local result = container.useCases.moveModule:run(userId, -1, -1, 5, 5, 0)
+			expect(result.ok).toBeFalsy()
+
+			local station = container.ports.stationRepository:load(userId)
+			expect(station.occupancy["-1,-1"] ~= nil).toBeTruthy()
+		end)
+
+		it("refuses a destination that overlaps another module", function()
+			container.useCases.placeModule:run(userId, "Corridor", 1, -1, 0)
+			local result = container.useCases.moveModule:run(userId, 1, -1, -1, -1, 0)
+			expect(result.ok).toBeFalsy()
+		end)
+
+		it("refuses a destination that touches nothing", function()
+			container.useCases.placeModule:run(userId, "Corridor", 1, -1, 0)
+			local result = container.useCases.moveModule:run(userId, 1, -1, 8, 8, 0)
+			expect(result.ok).toBeFalsy()
+		end)
+
+		describe("SceneBuilder wiring", function()
+			it("removes the old Instance and places a new one on a successful move", function()
+				container.useCases.placeModule:run(userId, "Corridor", 1, -1, 0)
+				sceneBuilder.removeCalls = {}
+				sceneBuilder.placeCalls = {}
+
+				container.useCases.moveModule:run(userId, 1, -1, 0, -2, 0)
+
+				expect(#sceneBuilder.removeCalls).toBe(1)
+				expect(sceneBuilder.removeCalls[1]).toEqual({ userId = userId, x = 1, y = -1 })
+				expect(#sceneBuilder.placeCalls).toBe(1)
+				expect(sceneBuilder.placeCalls[1].placement.x).toBe(0)
+				expect(sceneBuilder.placeCalls[1].placement.y).toBe(-2)
+			end)
+
+			it("does not touch the scene builder on a refused move", function()
+				container.useCases.placeModule:run(userId, "Corridor", 1, -1, 0)
+				sceneBuilder.removeCalls = {}
+				sceneBuilder.placeCalls = {}
+
+				container.useCases.moveModule:run(userId, 1, -1, 8, 8, 0)
+
+				expect(#sceneBuilder.removeCalls).toBe(0)
+				expect(#sceneBuilder.placeCalls).toBe(0)
+			end)
+		end)
+	end)
 end)

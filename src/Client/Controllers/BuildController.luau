@@ -66,6 +66,10 @@ local VIEW = {
 	ZoomMax = 250,
 	ZoomStep = 18,
 	YawStep = math.rad(15),
+	-- Mouse-edge panning: how close to the viewport's border (in pixels)
+	-- starts sliding the view, and how fast it slides once it does.
+	PanEdgeMargin = 48,
+	PanSpeed = 70,
 }
 
 type Entry = { id: string, x: number, y: number, rotation: number }
@@ -77,6 +81,8 @@ BuildController._selected = nil :: string?
 BuildController._rotation = 0
 BuildController._demolishing = false
 BuildController._upgrading = false
+BuildController._modifying = false
+BuildController._movingFrom = nil :: { x: number, y: number }?
 BuildController._origin = nil :: CFrame?
 BuildController._occupancy = {} :: { [string]: Entry }
 BuildController._credits = 0
@@ -85,6 +91,7 @@ BuildController._hovered = nil :: Entry?
 BuildController._buildView = false
 BuildController._zoom = VIEW.ZoomDefault
 BuildController._yaw = 0
+BuildController._panTarget = nil :: Vector3?
 BuildController._folder = nil :: Folder?
 
 ----------------------------------------------------------------------
@@ -178,11 +185,15 @@ function BuildController:_setLocation(location: string)
 		self._selected = nil
 		self._demolishing = false
 		self._upgrading = false
+		self._modifying = false
+		self._movingFrom = nil
 		self:_destroyGhost()
 		self:_destroyHighlight()
 		self._panel:SetSelected(nil)
 		self._panel:SetDemolishing(false)
 		self._panel:SetUpgrading(false)
+		self._panel:SetModifying(false)
+		self._panTarget = nil
 	end
 
 	self._panel:SetAvailable(onStation)
@@ -192,21 +203,57 @@ end
 ----------------------------------------------------------------------
 -- Build camera
 
-function BuildController:_updateCamera()
+-- Deliberately NOT tied to the character: build/modify/upgrade/demolish are
+-- all easier with a view that stays put while walking, and steers only
+-- through the mouse instead (see the edge-pan below). Starts centred on the
+-- station and is nil'd out on leaving it (_setLocation), so returning later
+-- re-centres rather than resuming wherever a previous visit left off.
+function BuildController:_updateCamera(deltaTime: number)
 	local origin = self._origin
 	if not origin then
 		return
 	end
 
-	-- Aim at the PLAYER, not the station's center: they can walk around in
-	-- build mode, and a camera fixed on the center would let them wander
-	-- off-screen. Keep the deck's altitude so a jump doesn't raise the view.
-	local target = origin.Position
-	local character = Players.LocalPlayer.Character
-	local root = character and character:FindFirstChild("HumanoidRootPart")
-	if root and root:IsA("BasePart") then
-		target = Vector3.new(root.Position.X, origin.Position.Y, root.Position.Z)
+	if not self._panTarget then
+		self._panTarget = origin.Position
 	end
+
+	-- Mouse-edge panning: hovering near a viewport border slides the view in
+	-- that direction, no click needed -- the only way to look at a different
+	-- part of a large station without walking there, now that the view no
+	-- longer follows the character.
+	local camera = getCamera()
+	local viewport = camera.ViewportSize
+	local mouse = UserInputService:GetMouseLocation()
+
+	local panRight, panForward = 0, 0
+	if mouse.X <= VIEW.PanEdgeMargin then
+		panRight = -1
+	elseif mouse.X >= viewport.X - VIEW.PanEdgeMargin then
+		panRight = 1
+	end
+	if mouse.Y <= VIEW.PanEdgeMargin then
+		panForward = -1
+	elseif mouse.Y >= viewport.Y - VIEW.PanEdgeMargin then
+		panForward = 1
+	end
+
+	if panRight ~= 0 or panForward ~= 0 then
+		-- Relative to the view's CURRENT facing (yaw), not raw world axes:
+		-- "toward the right edge" always pans right on screen, however the
+		-- view is currently rotated (Q/E).
+		local right = Vector3.new(math.cos(self._yaw), 0, -math.sin(self._yaw))
+		local forward = Vector3.new(math.sin(self._yaw), 0, math.cos(self._yaw))
+		local delta = (right * panRight + forward * panForward) * VIEW.PanSpeed * deltaTime
+		self._panTarget = self._panTarget + delta
+	end
+
+	-- Clamped to the grid itself: nothing built ever sits past its edge.
+	local maxExtent = GRID_RULES.radius * GRID_RULES.cellSize
+	local localX = math.clamp(self._panTarget.X - origin.Position.X, -maxExtent, maxExtent)
+	local localZ = math.clamp(self._panTarget.Z - origin.Position.Z, -maxExtent, maxExtent)
+	self._panTarget =
+		Vector3.new(origin.Position.X + localX, origin.Position.Y, origin.Position.Z + localZ)
 
 	local horizontal = math.cos(VIEW.Pitch) * self._zoom
 	local offset = Vector3.new(
@@ -214,7 +261,7 @@ function BuildController:_updateCamera()
 		math.sin(VIEW.Pitch) * self._zoom,
 		math.cos(self._yaw) * horizontal
 	)
-	getCamera().CFrame = CFrame.lookAt(target + offset, target)
+	camera.CFrame = CFrame.lookAt(self._panTarget + offset, self._panTarget)
 end
 
 function BuildController:_setBuildView(active: boolean)
@@ -225,15 +272,16 @@ function BuildController:_setBuildView(active: boolean)
 
 	if active then
 		getCamera().CameraType = Enum.CameraType.Scriptable
-		self:_updateCamera()
+		self:_updateCamera(0)
 	else
 		getCamera().CameraType = Enum.CameraType.Custom
 	end
 
-	-- The character is NO LONGER frozen. It used to be, to keep it from
-	-- wandering off-screen, but the camera now follows it: moving pans the
-	-- view, which is the only way to build far from the center. Movement
-	-- stays camera-relative, so WASD still makes sense even top-down.
+	-- The character is NOT frozen: WASD still moves it, camera-relative to
+	-- whatever the view currently faces. But moving no longer pans the
+	-- camera itself -- that's mouse-edge panning now (see _updateCamera) --
+	-- so the view stays put and predictable while working across a big
+	-- station.
 end
 
 -- In build mode as soon as the menu is open or a tool is in hand, and only
@@ -246,6 +294,7 @@ function BuildController:_refreshView()
 				or self._selected ~= nil
 				or self._demolishing
 				or self._upgrading
+				or self._modifying
 			)
 	)
 end
@@ -291,6 +340,10 @@ end
 
 ----------------------------------------------------------------------
 -- Same validation as the server, just to color the preview
+--
+-- Doubles as the move-preview check: while self._movingFrom is set, the
+-- module's OWN old cells never block it (it's vacating them, see
+-- Placement.canMove server-side) and there's no cost -- a move is free.
 
 function BuildController:_canPlace(
 	definition: ModuleCatalog.ModuleDef,
@@ -301,20 +354,26 @@ function BuildController:_canPlace(
 	if not Grid.isInBounds(anchor.x, anchor.y, width, depth, GRID_RULES) then
 		return false
 	end
-	if self._credits < definition.cost then
+	if not self._movingFrom and self._credits < definition.cost then
 		return false
 	end
 
+	local ignoreEntry = if self._movingFrom
+		then self._occupancy[Grid.key(self._movingFrom.x, self._movingFrom.y)]
+		else nil
+
 	local cells = Grid.cells(anchor.x, anchor.y, width, depth)
 	for _, cell in cells do
-		if self._occupancy[Grid.key(cell.x, cell.y)] then
+		local occupant = self._occupancy[Grid.key(cell.x, cell.y)]
+		if occupant and occupant ~= ignoreEntry then
 			return false
 		end
 	end
 
 	for _, cell in cells do
 		for _, neighbour in Grid.neighbours(cell.x, cell.y) do
-			if self._occupancy[Grid.key(neighbour.x, neighbour.y)] then
+			local occupant = self._occupancy[Grid.key(neighbour.x, neighbour.y)]
+			if occupant and occupant ~= ignoreEntry then
 				return true
 			end
 		end
@@ -589,9 +648,13 @@ function BuildController:_updateHighlight()
 	self._highlight.CFrame = origin
 		* CFrame.new(offset.x, offset.y, offset.z)
 		* CFrame.new(0, definition.height / 2, 0)
-	-- The same highlight serves both modes: red demolishes, amber upgrades.
-	-- Color alone says what the click will do.
-	self._highlight.Color = if self._upgrading then Theme.Function.Info else COLORS.Invalid
+	-- The same highlight serves all three modes: red demolishes, amber
+	-- upgrades, teal picks up to move. Color alone says what the click will
+	-- do.
+	self._highlight.Color = if self._upgrading
+		then Theme.Function.Info
+		elseif self._modifying then Theme.Function.Move
+		else COLORS.Invalid
 
 	self._hovered = entry
 end
@@ -607,6 +670,7 @@ function BuildController:_select(id: string?)
 		self._upgrading = false
 		self._panel:SetDemolishing(false)
 		self._panel:SetUpgrading(false)
+		self:_exitModify()
 		self:_destroyHighlight()
 		-- Close the menu: the player needs to see their station to place.
 		self._panel:Close()
@@ -622,6 +686,7 @@ function BuildController:_toggleDemolish()
 		self:_select(nil)
 		self._upgrading = false
 		self._panel:SetUpgrading(false)
+		self:_exitModify()
 		self._panel:Close()
 	else
 		self:_destroyHighlight()
@@ -631,20 +696,74 @@ function BuildController:_toggleDemolish()
 	self:_refreshView()
 end
 
--- The two modes are mutually exclusive: they share the same highlight and
--- left click, letting them coexist would make the action unpredictable.
+-- The modes are mutually exclusive: they share the same highlight and left
+-- click, letting them coexist would make the action unpredictable.
 function BuildController:_toggleUpgrade()
 	local wanted = not self._upgrading
 	if wanted then
 		self:_select(nil)
 		self._demolishing = false
 		self._panel:SetDemolishing(false)
+		self:_exitModify()
 		self._panel:Close()
 	else
 		self:_destroyHighlight()
 	end
 	self._upgrading = wanted
 	self._panel:SetUpgrading(wanted)
+	self:_refreshView()
+end
+
+function BuildController:_toggleModify()
+	local wanted = not self._modifying
+	if wanted then
+		self:_select(nil)
+		self._demolishing = false
+		self._upgrading = false
+		self._panel:SetDemolishing(false)
+		self._panel:SetUpgrading(false)
+		self._panel:Close()
+	else
+		self:_cancelMove()
+		self:_destroyHighlight()
+	end
+	self._modifying = wanted
+	self._panel:SetModifying(wanted)
+	self:_refreshView()
+end
+
+-- Used by the OTHER modes/selections when they take over: leaves modify mode
+-- entirely, cancelling a move in progress rather than silently abandoning
+-- it mid-air.
+function BuildController:_exitModify()
+	if not self._modifying then
+		return
+	end
+	self:_cancelMove()
+	self._modifying = false
+	self._panel:SetModifying(false)
+end
+
+-- "Picks up" an existing module to reposition it: reuses the ordinary
+-- ghost-preview machinery (self._selected/self._rotation), just sourced from
+-- an existing placement instead of the catalogue.
+function BuildController:_pickUpForMove(entry: Entry)
+	self._movingFrom = { x = entry.x, y = entry.y }
+	self._selected = entry.id
+	self._rotation = entry.rotation
+	self:_destroyHighlight()
+	self:_rebuildGhost()
+	self:_refreshView()
+end
+
+function BuildController:_cancelMove()
+	if not self._movingFrom then
+		return
+	end
+	self._movingFrom = nil
+	self._selected = nil
+	self._rotation = 0
+	self:_destroyGhost()
 	self:_refreshView()
 end
 
@@ -695,6 +814,53 @@ function BuildController:_demolish()
 	end
 end
 
+-- Left click while in modify mode: picks a module up if none is in hand
+-- yet, or confirms the move already in progress.
+function BuildController:_modifyClick()
+	if self._movingFrom then
+		self:_confirmMove()
+		return
+	end
+
+	local entry = self._hovered
+	if not entry then
+		return
+	end
+	if entry.id == "Core" then
+		self._panel:Toast("Le noyau ne peut pas être déplacé", true)
+		return
+	end
+	self:_pickUpForMove(entry)
+end
+
+-- Right click while in modify mode: cancels the move in hand, or leaves the
+-- mode entirely if nothing is picked up yet -- same shape as demolish/
+-- upgrade's own right-click.
+function BuildController:_modifyCancelOrExit()
+	if self._movingFrom then
+		self:_cancelMove()
+	else
+		self:_toggleModify()
+	end
+end
+
+function BuildController:_confirmMove()
+	local from = self._movingFrom
+	local anchor = self._anchor
+	if not (from and anchor) then
+		return
+	end
+
+	local ok, reason =
+		Net.MoveModule:InvokeServer(from.x, from.y, anchor.x, anchor.y, self._rotation)
+	self._panel:Toast(if ok then "Module déplacé" else tostring(reason), not ok)
+
+	self._movingFrom = nil
+	self._selected = nil
+	self._rotation = 0
+	self:_destroyGhost()
+end
+
 ----------------------------------------------------------------------
 
 function BuildController:_onInput(input: InputObject, gameProcessed: boolean)
@@ -723,6 +889,10 @@ function BuildController:_onInput(input: InputObject, gameProcessed: boolean)
 		self:_toggleUpgrade()
 		return
 	end
+	if input.KeyCode == Enum.KeyCode.M then
+		self:_toggleModify()
+		return
+	end
 
 	-- View rotation, only while in build mode.
 	if self._buildView then
@@ -746,6 +916,8 @@ function BuildController:_onInput(input: InputObject, gameProcessed: boolean)
 			self:_demolish()
 		elseif self._upgrading then
 			self:_upgrade()
+		elseif self._modifying then
+			self:_modifyClick()
 		elseif self._selected then
 			self:_place()
 		end
@@ -754,6 +926,8 @@ function BuildController:_onInput(input: InputObject, gameProcessed: boolean)
 			self:_toggleDemolish()
 		elseif self._upgrading then
 			self:_toggleUpgrade()
+		elseif self._modifying then
+			self:_modifyCancelOrExit()
 		else
 			self:_select(nil)
 		end
@@ -786,6 +960,9 @@ function BuildController:Start()
 	end
 	self._panel.onToggleUpgrade = function()
 		self:_toggleUpgrade()
+	end
+	self._panel.onToggleModify = function()
+		self:_toggleModify()
 	end
 	self._panel.onOpenChanged = function()
 		self:_refreshView()
@@ -834,14 +1011,14 @@ function BuildController:Start()
 		end
 	end)
 
-	RunService.RenderStepped:Connect(function()
+	RunService.RenderStepped:Connect(function(deltaTime: number)
 		if self._buildView then
-			self:_updateCamera()
+			self:_updateCamera(deltaTime)
 		end
 		if self._panel:IsOpen() or self._location ~= "Station" then
 			return
 		end
-		if self._demolishing or self._upgrading then
+		if self._demolishing or self._upgrading or (self._modifying and not self._movingFrom) then
 			self:_updateHighlight()
 		elseif self._selected then
 			self:_updateGhost()

@@ -108,6 +108,61 @@ function Placement.canRemove(
 	return Result.ok(existing)
 end
 
+-- Repositioning/reorienting an already-placed module -- a genuinely new
+-- action (the legacy game never had a "move" tool). `x, y` may be any cell
+-- of the existing module, not just its anchor (a raycast-picked cell on a
+-- multi-cell module), so the anchor to vacate is read off the found
+-- placement, not the parameters. Unique modules (the core) can never move:
+-- its position is load-bearing for EmbarkStation/claimPlot and
+-- Placement.initial(), which both assume it. Free (no cost, no refund) --
+-- this corrects a misplacement, it doesn't rebuild anything.
+function Placement.canMove(
+	station: Station,
+	x: number,
+	y: number,
+	newX: number,
+	newY: number,
+	newRotation: number,
+	gridRules: Grid.Rules
+): Result<PlacementCheck, string>
+	local existing = station.occupancy[Grid.key(x, y)]
+	if not existing then
+		return Result.err("no module here")
+	end
+
+	local definition = ModuleCatalog.get(existing.id)
+	if not definition then
+		return Result.err("unknown module")
+	end
+	if definition.unique then
+		return Result.err("cannot be moved")
+	end
+
+	local width, height = ModuleCatalog.sizeOf(definition, newRotation)
+	if not Grid.isInBounds(newX, newY, width, height, gridRules) then
+		return Result.err("out of bounds")
+	end
+
+	-- A shallow copy with the module's OWN current cells cleared: it must
+	-- never block itself from moving onto a spot overlapping (or identical
+	-- to) where it already stands.
+	local oldWidth, oldHeight = ModuleCatalog.sizeOf(definition, existing.rotation)
+	local vacated: Occupancy = table.clone(station.occupancy)
+	for _, cell in Grid.cells(existing.x, existing.y, oldWidth, oldHeight) do
+		vacated[Grid.key(cell.x, cell.y)] = nil
+	end
+
+	local newCells = Grid.cells(newX, newY, width, height)
+	if not Placement.cellsFree(vacated, newCells) then
+		return Result.err("cell already occupied")
+	end
+	if not Placement.touchesStation(vacated, newCells) then
+		return Result.err("must touch the station")
+	end
+
+	return Result.ok({ width = width, height = height, cells = newCells })
+end
+
 -- A station always starts with its core already placed, centred on the
 -- grid origin (a 2x2 module anchored at -1,-1) -- ported from the "free"
 -- placement StationService:EnsureStation makes before anything else.
