@@ -7,7 +7,13 @@ local Container = require(Composition.Container)
 local RULES = {
 	grid = { cellSize = 8, radius = 12 },
 	refundRatio = 0.5,
-	upgrade = { maxLevel = 4, gainPerLevel = 0.5, costFactor = 2, minCost = 100 },
+	upgrade = {
+		maxLevel = 4,
+		gainPerLevel = 0.5,
+		costFactor = 2,
+		minCost = 100,
+		coreUpgradeCost = 150,
+	},
 	orbit = { period = 180, eclipseFraction = 0.3 },
 	heat = { baseCapacity = 40, capacityPerRadiator = 60, overheatPenalty = 0.55 },
 	resourceValues = { Ore = 5, Alloy = 22, Component = 75 },
@@ -138,6 +144,7 @@ describe("Station use cases (real Container, fake ports)", function()
 
 	it("upgrades a module, charges for it, and persists the new level in the profile", function()
 		container.useCases.placeModule:run(userId, "SolarPanel", 1, -1, 0) -- upgradable, cost 150
+		container.useCases.upgradeModule:run(userId, -1, -1) -- core to level 2 first: it gates everyone else
 		local afterPlace = container.ports.profileRepository:load(userId).credits
 
 		local result = container.useCases.upgradeModule:run(userId, 1, -1)
@@ -170,11 +177,49 @@ describe("Station use cases (real Container, fake ports)", function()
 	it("refuses to upgrade past the level cap", function()
 		container.useCases.placeModule:run(userId, "SolarPanel", 1, -1, 0)
 		for _ = 1, RULES.upgrade.maxLevel - 1 do
+			-- The core paces the cap too: keep it a step ahead so the
+			-- refusal below is genuinely the max-level cap, not the core
+			-- gate (see the dedicated "core gate" tests further down).
+			container.useCases.upgradeModule:run(userId, -1, -1)
 			local step = container.useCases.upgradeModule:run(userId, 1, -1)
 			expect(step.ok).toBeTruthy()
 		end
 		local overCap = container.useCases.upgradeModule:run(userId, 1, -1)
 		expect(overCap.ok).toBeFalsy()
+	end)
+
+	describe("core gate", function()
+		it("refuses to upgrade a module above the core's level", function()
+			container.useCases.placeModule:run(userId, "SolarPanel", 1, -1, 0)
+			-- Core and SolarPanel both start at level 1: nothing to catch up
+			-- to yet, so the very first upgrade attempt is refused.
+			local result = container.useCases.upgradeModule:run(userId, 1, -1)
+			expect(result.ok).toBeFalsy()
+		end)
+
+		it("allows a module to catch up to the core's level, one step at a time", function()
+			container.useCases.placeModule:run(userId, "SolarPanel", 1, -1, 0)
+			container.useCases.upgradeModule:run(userId, -1, -1) -- core -> 2
+			local result = container.useCases.upgradeModule:run(userId, 1, -1) -- solar -> 2
+			expect(result.ok).toBeTruthy()
+
+			-- Now level with the core again: refused until the core moves
+			-- again.
+			local blocked = container.useCases.upgradeModule:run(userId, 1, -1)
+			expect(blocked.ok).toBeFalsy()
+		end)
+
+		it("never gates the core's own upgrade", function()
+			local result = container.useCases.upgradeModule:run(userId, -1, -1)
+			expect(result.ok).toBeTruthy()
+		end)
+
+		it("charges the core's dedicated flat rate, not the base-cost formula", function()
+			local before = container.ports.profileRepository:load(userId).credits
+			container.useCases.upgradeModule:run(userId, -1, -1)
+			local after = container.ports.profileRepository:load(userId).credits
+			expect(before - after).toBe(RULES.upgrade.coreUpgradeCost)
+		end)
 	end)
 
 	describe("SceneBuilder wiring", function()
@@ -199,6 +244,9 @@ describe("Station use cases (real Container, fake ports)", function()
 
 		it("asks the scene builder to update the level on a successful upgrade", function()
 			container.useCases.placeModule:run(userId, "SolarPanel", 1, -1, 0)
+			container.useCases.upgradeModule:run(userId, -1, -1) -- core to level 2 first
+			sceneBuilder.levelCalls = {}
+
 			container.useCases.upgradeModule:run(userId, 1, -1)
 			expect(#sceneBuilder.levelCalls).toBe(1)
 			expect(sceneBuilder.levelCalls[1]).toEqual({ userId = userId, x = 1, y = -1, level = 2 })
@@ -239,6 +287,7 @@ describe("Station use cases (real Container, fake ports)", function()
 
 		it("preserves the module's level across a move", function()
 			container.useCases.placeModule:run(userId, "SolarPanel", 1, -1, 0)
+			container.useCases.upgradeModule:run(userId, -1, -1) -- core to level 2 first
 			container.useCases.upgradeModule:run(userId, 1, -1) -- now level 2
 
 			container.useCases.moveModule:run(userId, 1, -1, 0, -2, 0)

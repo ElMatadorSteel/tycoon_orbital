@@ -45,6 +45,11 @@ export type UpgradeRules = {
 	gainPerLevel: number,
 	costFactor: number,
 	minCost: number,
+	-- The core's own base cost is 0 (it ships with the station, see below),
+	-- which would make the generic formula's floor its ENTIRE cost forever,
+	-- never growing with level -- a dedicated flat rate instead, set higher
+	-- than that floor on purpose (see Balance.Upgrade's own comment).
+	coreUpgradeCost: number,
 }
 
 local ModuleCatalog = {}
@@ -244,11 +249,19 @@ end
 
 -- Cost of moving to the next level, from the current one. Geometric growth:
 -- the first tier is affordable, the last one is earned.
+--
+-- The core is a special case: its base cost is 0 (it ships with the
+-- station, not bought), so the generic formula would floor it at a FLAT
+-- rate forever -- which is still the intent, just at its own dedicated
+-- rate rather than the shared minCost every other module's floor uses.
 function ModuleCatalog.upgradeCost(
 	definition: ModuleDef,
 	level: number,
 	rules: UpgradeRules
 ): number
+	if definition.id == "Core" then
+		return rules.coreUpgradeCost
+	end
 	return math.max(rules.minCost, math.floor(definition.cost * rules.costFactor ^ level))
 end
 

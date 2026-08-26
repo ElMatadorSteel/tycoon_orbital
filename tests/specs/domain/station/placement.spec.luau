@@ -78,6 +78,19 @@ describe("Placement.canRemove", function()
 	end)
 end)
 
+describe("Placement.coreLevel", function()
+	it("reads the core's level, starting at 1", function()
+		local station = Placement.initial()
+		expect(Placement.coreLevel(station)).toBe(1)
+	end)
+
+	it("tracks the core's level after it changes", function()
+		local station = Placement.initial()
+		station.placements[1].level = 4 -- the core is always placements[1]
+		expect(Placement.coreLevel(station)).toBe(4)
+	end)
+end)
+
 describe("Placement.canMove", function()
 	local Grid = require(Domain.Grid.Grid)
 

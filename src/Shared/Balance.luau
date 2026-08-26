@@ -21,12 +21,23 @@ local Balance = {
 	-- never what it consumes -- upgrading must always be a net gain, or the
 	-- player can no longer tell whether it was a good idea.
 	Upgrade = {
-		MaxLevel = 5,
+		MaxLevel = 10,
 		GainPerLevel = 0.35, -- +35% of base output per level
 		CostFactor = 1.8, -- cost = base cost * CostFactor^level
-		-- Floor: the core costs 0 in the catalogue, its upgrade would
-		-- otherwise be free.
+		-- Floor: every other upgradable module's base cost already clears
+		-- this well before its own first level (see ModuleCatalog.luau's
+		-- module_catalog spec) -- in practice this only ever binds for
+		-- modules with no cost of their own, i.e. never, now that the core
+		-- has its own dedicated rate below.
 		MinCost = 250,
+		-- The core's own flat upgrade rate -- its base cost is 0 (it ships
+		-- with the station), so it needs a dedicated rate rather than
+		-- MinCost's shared floor (raising MinCost instead would also raise
+		-- OTHER modules' cheap early levels, which sit close to it). Set at
+		-- 1.5x the old flat 250 rate: the core also gates every other
+		-- module's own max level now (see Placement.coreLevel/UpgradeModule),
+		-- so its own pace-setting upgrade should cost a bit more.
+		CoreUpgradeCost = 375,
 	},
 
 	Save = {

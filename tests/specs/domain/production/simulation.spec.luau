@@ -25,7 +25,8 @@ local LOW_HEAT_RULES = { baseCapacity = 20, capacityPerRadiator = 60, overheatPe
 local RESOURCE_VALUES = { Ore = 5, Alloy = 22, Component = 75 }
 -- gainPerLevel = 0.5: a level-2 module's levelMultiplier is 1.5, a
 -- level-3's is 2 -- clean numbers to check the boost against by hand.
-local UPGRADE_RULES = { maxLevel = 5, gainPerLevel = 0.5, costFactor = 2, minCost = 100 }
+local UPGRADE_RULES =
+	{ maxLevel = 5, gainPerLevel = 0.5, costFactor = 2, minCost = 100, coreUpgradeCost = 150 }
 
 local function baseParams(overrides: { [string]: any }?)
 	local params = {

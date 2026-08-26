@@ -1,7 +1,8 @@
 --!strict
 local ModuleCatalog = require(Domain.Station.ModuleCatalog)
 
-local UPGRADE_RULES = { maxLevel = 4, gainPerLevel = 0.5, costFactor = 2, minCost = 100 }
+local UPGRADE_RULES =
+	{ maxLevel = 4, gainPerLevel = 0.5, costFactor = 2, minCost = 100, coreUpgradeCost = 150 }
 
 describe("ModuleCatalog.get / Order", function()
 	it("resolves every id listed in Order to a real definition", function()
@@ -80,5 +81,17 @@ describe("ModuleCatalog.levelMultiplier / upgradeCost", function()
 		local costAt1 = ModuleCatalog.upgradeCost(definition, 1, UPGRADE_RULES)
 		local costAt2 = ModuleCatalog.upgradeCost(definition, 2, UPGRADE_RULES)
 		expect(costAt2 > costAt1).toBeTruthy()
+	end)
+
+	it("charges the core its own dedicated flat rate, not the base-cost formula", function()
+		local core = ModuleCatalog.get("Core") :: any -- cost 0 in the catalogue
+		expect(ModuleCatalog.upgradeCost(core, 1, UPGRADE_RULES)).toBe(
+			UPGRADE_RULES.coreUpgradeCost
+		)
+		-- Flat: unlike every other module, the core's rate does not grow
+		-- with level (see Balance.Upgrade.CoreUpgradeCost's own comment).
+		expect(ModuleCatalog.upgradeCost(core, 5, UPGRADE_RULES)).toBe(
+			UPGRADE_RULES.coreUpgradeCost
+		)
 	end)
 end)

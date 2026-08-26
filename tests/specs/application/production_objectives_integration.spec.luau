@@ -6,7 +6,13 @@ local Container = require(Composition.Container)
 local RULES = {
 	grid = { cellSize = 8, radius = 12 },
 	refundRatio = 0.5,
-	upgrade = { maxLevel = 5, gainPerLevel = 0.35, costFactor = 1.8, minCost = 250 },
+	upgrade = {
+		maxLevel = 5,
+		gainPerLevel = 0.35,
+		costFactor = 1.8,
+		minCost = 250,
+		coreUpgradeCost = 375,
+	},
 	orbit = { period = 180, eclipseFraction = 0.3 },
 	heat = { baseCapacity = 40, capacityPerRadiator = 60, overheatPenalty = 0.55 },
 	resourceValues = { Ore = 5, Alloy = 22, Component = 75 },

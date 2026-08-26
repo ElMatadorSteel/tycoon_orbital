@@ -23,6 +23,7 @@ end
 
 local Grid = require(fromShared("Domain/Grid/Grid"))
 local ModuleCatalog = require(fromShared("Domain/Station/ModuleCatalog"))
+local Placement = require(fromShared("Domain/Station/Placement"))
 local Credits = require(fromShared("Domain/Economy/Credits"))
 local Result = require(fromShared("Domain/Support/Result"))
 local StationProfileSync = require("../StationProfileSync")
@@ -59,6 +60,12 @@ function UpgradeModule:run(userId: number, x: number, y: number): Result<number,
 	end
 	if existing.level >= self.upgradeRules.maxLevel then
 		return Result.err("already at maximum level")
+	end
+	-- The core paces every other module: nothing may be upgraded past
+	-- whatever level the core is CURRENTLY at (the core itself is exempt --
+	-- it has nothing to be capped against).
+	if existing.id ~= "Core" and existing.level >= Placement.coreLevel(station) then
+		return Result.err("cannot exceed the core's level")
 	end
 
 	local cost = ModuleCatalog.upgradeCost(definition, existing.level, self.upgradeRules)

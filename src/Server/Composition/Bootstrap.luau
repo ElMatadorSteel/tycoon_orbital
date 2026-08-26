@@ -144,6 +144,7 @@ function Bootstrap.start()
 				gainPerLevel = Balance.Upgrade.GainPerLevel,
 				costFactor = Balance.Upgrade.CostFactor,
 				minCost = Balance.Upgrade.MinCost,
+				coreUpgradeCost = Balance.Upgrade.CoreUpgradeCost,
 			},
 			orbit = {
 				period = Balance.Orbit.Period,

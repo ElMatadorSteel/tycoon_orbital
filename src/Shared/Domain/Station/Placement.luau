@@ -108,6 +108,20 @@ function Placement.canRemove(
 	return Result.ok(existing)
 end
 
+-- The core's current level: the pace-setter for every other module's own
+-- upgrade cap (see UpgradeModule -- nothing may be upgraded past it). Every
+-- station always has exactly one core (Placement.initial() seeds it, and it
+-- can never be removed or moved), so this only ever falls back to 1 in
+-- practice.
+function Placement.coreLevel(station: Station): number
+	for _, placement in station.placements do
+		if placement.id == "Core" then
+			return placement.level
+		end
+	end
+	return 1
+end
+
 -- Repositioning/reorienting an already-placed module -- a genuinely new
 -- action (the legacy game never had a "move" tool). `x, y` may be any cell
 -- of the existing module, not just its anchor (a raycast-picked cell on a

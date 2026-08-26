@@ -34,6 +34,7 @@ describe("Profile + Economy integration (real Container, fake ports)", function(
 					gainPerLevel = 0.35,
 					costFactor = 1.8,
 					minCost = 250,
+					coreUpgradeCost = 375,
 				},
 				orbit = { period = 180, eclipseFraction = 0.3 },
 				heat = { baseCapacity = 40, capacityPerRadiator = 60, overheatPenalty = 0.55 },
