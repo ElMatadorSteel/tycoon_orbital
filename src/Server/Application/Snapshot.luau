@@ -44,6 +44,7 @@ export type RebirthSnapshot = {
 	HasEarlyRebirth: boolean,
 	GlobalBoost: number,
 }
+export type MiningSnapshot = { HasRailgun: boolean }
 export type ProductionSnapshot = {
 	Sunlight: number,
 	Efficiency: number,
@@ -86,6 +87,10 @@ function Snapshot.rebirth(
 		HasEarlyRebirth = hasEarlyRebirth,
 		GlobalBoost = globalBoost,
 	}
+end
+
+function Snapshot.mining(hasRailgun: boolean): MiningSnapshot
+	return { HasRailgun = hasRailgun }
 end
 
 function Snapshot.production(stats: {

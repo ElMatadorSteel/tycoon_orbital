@@ -37,6 +37,8 @@ local AttributeStatsPublisher = require("../Adapters/Replication/AttributeStatsP
 local RemoteNotifier = require("../Adapters/Replication/RemoteNotifier")
 local StationSceneBuilder = require("../Adapters/Roblox/StationSceneBuilder")
 local CharacterTeleporter = require("../Adapters/Roblox/CharacterTeleporter")
+local AsteroidFieldRenderer = require("../Adapters/Roblox/AsteroidFieldRenderer")
+local RailgunKioskBuilder = require("../Adapters/Roblox/RailgunKioskBuilder")
 
 -- Fails fast and loud: a half-wired lobby gives players who fall into the
 -- void, much harder to diagnose than a startup error. Ported from the
@@ -135,6 +137,29 @@ function Bootstrap.start()
 		sceneBuilder = sceneBuilder,
 	})
 
+	-- New content, not hand-authored scenery: created here rather than
+	-- WaitForChild'd, same reasoning as the plot/module geometry above being
+	-- built procedurally instead of requiring a Studio-placed model.
+	local asteroidsParent: Instance = workspace:FindFirstChild("Asteroids") :: Instance
+	if not asteroidsParent then
+		local folder = Instance.new("Folder")
+		folder.Name = "Asteroids"
+		folder.Parent = workspace
+		asteroidsParent = folder
+	end
+
+	local asteroidField = AsteroidFieldRenderer.new({
+		sceneBuilder = sceneBuilder,
+		asteroidsParent = asteroidsParent,
+		lifetime = Balance.Mining.Railgun.AsteroidLifetime,
+	})
+
+	RailgunKioskBuilder.new({
+		lobby = lobby,
+		lobbySpawn = lobbySpawn,
+		profileRepository = profileRepository,
+	}):build()
+
 	local container = Container.new({
 		ports = {
 			profileRepository = profileRepository,
@@ -144,6 +169,7 @@ function Bootstrap.start()
 			notifier = RemoteNotifier.new(),
 			sceneBuilder = sceneBuilder,
 			teleporter = teleporter,
+			asteroidField = asteroidField,
 		},
 		sessionRegistry = SessionRegistry.new(),
 		rules = {
@@ -170,6 +196,14 @@ function Bootstrap.start()
 			startingCredits = Balance.Economy.StartingCredits,
 			profileRules = profileRules,
 			unlimitedMoneyCeiling = Balance.Dev.UnlimitedMoneyCeiling,
+			railgun = {
+				cost = Balance.Mining.Railgun.Cost,
+				cooldown = Balance.Mining.Railgun.Cooldown,
+				maxActive = Balance.Mining.Railgun.MaxActive,
+				spawnChancePerTick = Balance.Mining.Railgun.SpawnChancePerTick,
+			},
+			asteroidTiers = { tiers = Balance.Mining.Tiers },
+			asteroidLifetime = Balance.Mining.Railgun.AsteroidLifetime,
 		},
 		development = RunService:IsStudio(),
 	})
@@ -243,6 +277,26 @@ function Bootstrap.start()
 				end)
 				if not ok then
 					warn(`[Bootstrap] tick failed for {player.Name}: {err}`)
+				end
+			end
+		end
+	end)
+
+	-- The mining side-feature's own tick loop -- separate cadence from the
+	-- production loop above (Balance.Mining.Railgun.TickRate, independently
+	-- tunable) since spawning/expiring asteroids has nothing to do with the
+	-- power/heat/resource simulation. RunMiningTick itself no-ops for anyone
+	-- without a Railgun, so this is cheap for every player who hasn't bought
+	-- one.
+	task.spawn(function()
+		while true do
+			task.wait(Balance.Mining.Railgun.TickRate)
+			for _, player in Players:GetPlayers() do
+				local ok, err = pcall(function()
+					container.useCases.runMiningTick:run(player.UserId)
+				end)
+				if not ok then
+					warn(`[Bootstrap] mining tick failed for {player.Name}: {err}`)
 				end
 			end
 		end

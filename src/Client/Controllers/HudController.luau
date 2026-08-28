@@ -305,7 +305,10 @@ function HudController:Start()
 	end)
 
 	State.Notified:Connect(function(kind: string, payload: any)
-		if kind == "Power" or kind == "Storage" or kind == "Cooling" then
+		-- "Credits" is the Railgun's own gain popup (Application/UseCases/
+		-- FireRailgun) -- GainFeed.KINDS already carries a Credits entry
+		-- (cash icon, money color), unused until now.
+		if kind == "Power" or kind == "Storage" or kind == "Cooling" or kind == "Credits" then
 			feed:Push(kind, payload)
 		end
 	end)

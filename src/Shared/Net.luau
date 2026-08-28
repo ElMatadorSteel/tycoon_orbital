@@ -22,6 +22,8 @@ local DEFINITIONS = {
 	MoveModule = "RemoteFunction",
 	ReturnToLobby = "RemoteFunction",
 	RebirthStation = "RemoteFunction",
+	PurchaseRailgun = "RemoteFunction",
+	FireRailgun = "RemoteFunction",
 	-- Only ever bound server-side when Bootstrap was built in development
 	-- mode (see Container.luau's `development` flag) -- exist as Instances
 	-- either way (Net.luau always creates every remote listed here), they

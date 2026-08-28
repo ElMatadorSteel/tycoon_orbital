@@ -107,4 +107,16 @@ export type Teleporter = {
 	sendToStation: (self: Teleporter, userId: number) -> (),
 }
 
+-- The Railgun mining side-feature's asteroid visuals. Deliberately just
+-- spawn/despawn -- no "onExpire" callback: lifetime/expiry is decided
+-- authoritatively by RunMiningTick comparing spawnedAt against the clock
+-- every tick and calling despawn itself, not by the adapter's own tween
+-- completion. This keeps the adapter dumb (cosmetic movement only) and the
+-- timing rule testable with a fake clock, same reasoning as SceneBuilder
+-- never owning placement rules itself.
+export type AsteroidField = {
+	spawn: (self: AsteroidField, userId: number, asteroidId: string, tier: string) -> (),
+	despawn: (self: AsteroidField, userId: number, asteroidId: string) -> (),
+}
+
 return {}

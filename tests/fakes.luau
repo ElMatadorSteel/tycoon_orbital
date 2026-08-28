@@ -136,6 +136,27 @@ function RecordingSceneBuilder:setModuleLevel(userId: number, x: number, y: numb
 	table.insert(self.levelCalls, { userId = userId, x = x, y = y, level = level })
 end
 
+-- A recording AsteroidField: doesn't touch any Instance (there is none
+-- under Lune), just records every call so a test can assert RunMiningTick/
+-- FireRailgun invoked the right one.
+local RecordingAsteroidField = {}
+RecordingAsteroidField.__index = RecordingAsteroidField
+
+function RecordingAsteroidField.new()
+	return setmetatable({
+		spawnCalls = {} :: { { userId: number, asteroidId: string, tier: string } },
+		despawnCalls = {} :: { { userId: number, asteroidId: string } },
+	}, RecordingAsteroidField)
+end
+
+function RecordingAsteroidField:spawn(userId: number, asteroidId: string, tier: string)
+	table.insert(self.spawnCalls, { userId = userId, asteroidId = asteroidId, tier = tier })
+end
+
+function RecordingAsteroidField:despawn(userId: number, asteroidId: string)
+	table.insert(self.despawnCalls, { userId = userId, asteroidId = asteroidId })
+end
+
 -- A recording Teleporter: doesn't move anything (there is no character
 -- under Lune), just records every call so a test can assert a use case
 -- invoked the right one.
@@ -165,4 +186,5 @@ return {
 	RecordingNotifier = RecordingNotifier,
 	RecordingSceneBuilder = RecordingSceneBuilder,
 	RecordingTeleporter = RecordingTeleporter,
+	RecordingAsteroidField = RecordingAsteroidField,
 }

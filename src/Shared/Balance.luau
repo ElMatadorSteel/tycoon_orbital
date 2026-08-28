@@ -107,6 +107,56 @@ local Balance = {
 		BonusPerRebirth = 0.25, -- +25% production, additive, per rebirth banked
 		UltimateMultiplier = 1.5, -- flat multiplier while the paid Ultimate pass is owned
 	},
+
+	-- Optional side content: a purchasable Railgun that shoots passing
+	-- asteroids near a player's own station for bonus credits. Entirely
+	-- separate from the main build/upgrade/rebirth loop -- nothing here
+	-- feeds back into it besides the credits themselves.
+	Mining = {
+		Railgun = {
+			Cost = 500, -- one-time purchase price
+			Cooldown = 1.5, -- seconds between two shots
+			MaxActive = 3, -- concurrent asteroids per player
+			-- Checked once per Mining.TickRate, only while under MaxActive:
+			-- ~1 spawn every ~4s of the cap not being full.
+			SpawnChancePerTick = 0.12,
+			AsteroidLifetime = 8, -- seconds an asteroid is shootable before it flies past
+			TickRate = 1, -- separate from Simulation.TickRate -- independently tunable
+		},
+		-- Common is worth roughly one production tick's revenue; Legendary is
+		-- worth roughly 2-4x the core's own upgrade cost (375) -- a real
+		-- jackpot, appropriately rare at weight 3/100.
+		Tiers = {
+			{
+				id = "Common",
+				name = "Astéroïde commun",
+				weight = 60,
+				minReward = 15,
+				maxReward = 30,
+			},
+			{
+				id = "Rare",
+				name = "Astéroïde rare",
+				weight = 25,
+				minReward = 60,
+				maxReward = 110,
+			},
+			{
+				id = "Epic",
+				name = "Astéroïde épique",
+				weight = 12,
+				minReward = 220,
+				maxReward = 380,
+			},
+			{
+				id = "Legendary",
+				name = "Astéroïde légendaire",
+				weight = 3,
+				minReward = 900,
+				maxReward = 1500,
+			},
+		},
+	},
 }
 
 return Balance

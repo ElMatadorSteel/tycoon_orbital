@@ -30,6 +30,8 @@ local Simulation = require(fromShared("Domain/Production/Simulation"))
 local Orbit = require(fromShared("Domain/Production/Orbit"))
 local Rebirth = require(fromShared("Domain/Rebirth/Rebirth"))
 local Profile = require(fromShared("Domain/Profile/Profile"))
+local Railgun = require(fromShared("Domain/Mining/Railgun"))
+local AsteroidTiers = require(fromShared("Domain/Mining/AsteroidTiers"))
 local SpendCredits = require("../Application/UseCases/SpendCredits")
 local AddCredits = require("../Application/UseCases/AddCredits")
 local PlaceModule = require("../Application/UseCases/PlaceModule")
@@ -46,6 +48,9 @@ local DevSetPass = require("../Application/UseCases/DevSetPass")
 local DevSetRebirths = require("../Application/UseCases/DevSetRebirths")
 local DevSetUnlimitedMoney = require("../Application/UseCases/DevSetUnlimitedMoney")
 local DevResetAll = require("../Application/UseCases/DevResetAll")
+local PurchaseRailgun = require("../Application/UseCases/PurchaseRailgun")
+local RunMiningTick = require("../Application/UseCases/RunMiningTick")
+local FireRailgun = require("../Application/UseCases/FireRailgun")
 
 export type Ports = {
 	profileRepository: any, -- Ports.ProfileRepository
@@ -55,6 +60,7 @@ export type Ports = {
 	notifier: any, -- Ports.Notifier
 	sceneBuilder: any, -- Ports.SceneBuilder
 	teleporter: any, -- Ports.Teleporter
+	asteroidField: any, -- Ports.AsteroidField
 }
 
 -- Plain balance numbers, not ports: there is nothing to swap an
@@ -71,6 +77,9 @@ export type Rules = {
 	startingCredits: number, -- what RebirthStation resets credits back to
 	profileRules: Profile.Rules, -- what DevResetAll rebuilds a blank profile with
 	unlimitedMoneyCeiling: number, -- dev-only, see DevSetUnlimitedMoney
+	railgun: Railgun.Rules,
+	asteroidTiers: AsteroidTiers.Rules,
+	asteroidLifetime: number, -- seconds an asteroid is shootable before it flies past
 }
 
 export type Container = {
@@ -90,6 +99,9 @@ export type Container = {
 		runProductionTick: any,
 		checkObjectiveProgress: any,
 		rebirthStation: any,
+		purchaseRailgun: any,
+		runMiningTick: any,
+		fireRailgun: any,
 		-- Only present when built with development = true:
 		devSetPass: any?,
 		devSetRebirths: any?,
@@ -226,6 +238,33 @@ function Container.new(
 			startingCredits = rules.startingCredits,
 			rebirthRules = rules.rebirth,
 		}, RebirthStation),
+
+		purchaseRailgun = setmetatable({
+			profileRepository = ports.profileRepository,
+			statsPublisher = ports.statsPublisher,
+			railgunRules = rules.railgun,
+		}, PurchaseRailgun),
+
+		runMiningTick = setmetatable({
+			profileRepository = ports.profileRepository,
+			sessionRegistry = sessionRegistry,
+			asteroidField = ports.asteroidField,
+			clock = ports.clock,
+			railgunRules = rules.railgun,
+			tierRules = rules.asteroidTiers,
+			asteroidLifetime = rules.asteroidLifetime,
+		}, RunMiningTick),
+
+		fireRailgun = setmetatable({
+			profileRepository = ports.profileRepository,
+			sessionRegistry = sessionRegistry,
+			asteroidField = ports.asteroidField,
+			statsPublisher = ports.statsPublisher,
+			notifier = ports.notifier,
+			clock = ports.clock,
+			railgunRules = rules.railgun,
+			tierRules = rules.asteroidTiers,
+		}, FireRailgun),
 	}
 
 	-- Dev-only affordances, never present in production: see CLAUDE.md's

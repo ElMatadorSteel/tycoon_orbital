@@ -73,6 +73,14 @@ function RemoteBindings.bind(container: any)
 		return respond(container.useCases.rebirthStation:run(player.UserId))
 	end
 
+	Net.PurchaseRailgun.OnServerInvoke = function(player: Player)
+		return respond(container.useCases.purchaseRailgun:run(player.UserId))
+	end
+
+	Net.FireRailgun.OnServerInvoke = function(player: Player, asteroidId: string)
+		return respond(container.useCases.fireRailgun:run(player.UserId, asteroidId))
+	end
+
 	-- Only bound when Container was built in development mode -- see its
 	-- own header. A client InvokeServer against any of these in production
 	-- hits an Instance with no OnServerInvoke callback set, which errors out

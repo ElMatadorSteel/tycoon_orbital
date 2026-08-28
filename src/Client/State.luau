@@ -51,6 +51,7 @@ local WATCHED = {
 	"HasUltimate",
 	"HasEarlyRebirth",
 	"GlobalBoost",
+	"HasRailgun",
 }
 
 local State = {}

@@ -28,8 +28,16 @@
 --     tick while it's set, so no dev-mode spending can ever run it dry.
 --     Deliberately session-only, never persisted: a real player's balance
 --     must never depend on a flag surviving a reconnect by accident.
+--   - asteroids/lastFire: the Railgun mining side-feature's live state --
+--     which asteroid ids are currently alive for this player (tier +
+--     spawnedAt, so RunMiningTick can judge expiry) and when they last
+--     fired (so FireRailgun can enforce the cooldown). Same volatility
+--     reasoning as `production`: an asteroid flying past has no meaning
+--     across a disconnect, and the profile only ever needs to know the
+--     credits a hit already earned, not the asteroid itself.
 
 export type ProductionState = { charge: number, pendingCredit: number }
+export type AsteroidState = { tier: string, spawnedAt: number }
 
 local SessionRegistry = {}
 SessionRegistry.__index = SessionRegistry
@@ -40,6 +48,9 @@ function SessionRegistry.new()
 		_embarked = {} :: { [number]: boolean },
 		_restored = {} :: { [number]: boolean },
 		_unlimitedMoney = {} :: { [number]: boolean },
+		_asteroids = {} :: { [number]: { [string]: AsteroidState } },
+		_lastFire = {} :: { [number]: number },
+		_nextAsteroidId = {} :: { [number]: number },
 	}, SessionRegistry)
 end
 
@@ -77,6 +88,42 @@ function SessionRegistry:setUnlimitedMoney(userId: number, value: boolean)
 	self._unlimitedMoney[userId] = value
 end
 
+function SessionRegistry:asteroids(userId: number): { [string]: AsteroidState }
+	local existing = self._asteroids[userId]
+	if existing then
+		return existing
+	end
+	local fresh = {}
+	self._asteroids[userId] = fresh
+	return fresh
+end
+
+-- Ids are per-player incrementing counters, not GUIDs: readable in the
+-- Studio explorer while testing, and a player's own field never needs to be
+-- globally unique across other players' fields.
+function SessionRegistry:spawnAsteroid(userId: number, tier: string, now: number): string
+	local nextId = (self._nextAsteroidId[userId] or 0) + 1
+	self._nextAsteroidId[userId] = nextId
+	local id = `Asteroid_{nextId}`
+	self:asteroids(userId)[id] = { tier = tier, spawnedAt = now }
+	return id
+end
+
+function SessionRegistry:removeAsteroid(userId: number, asteroidId: string)
+	local asteroids = self._asteroids[userId]
+	if asteroids then
+		asteroids[asteroidId] = nil
+	end
+end
+
+function SessionRegistry:lastFire(userId: number): number
+	return self._lastFire[userId] or -math.huge -- never fired: no cooldown to wait out
+end
+
+function SessionRegistry:setLastFire(userId: number, now: number)
+	self._lastFire[userId] = now
+end
+
 -- Call on PlayerRemoving, once this is wired into a real bootstrap: nothing
 -- here should outlive the connection it belongs to.
 function SessionRegistry:release(userId: number)
@@ -84,6 +131,9 @@ function SessionRegistry:release(userId: number)
 	self._embarked[userId] = nil
 	self._restored[userId] = nil
 	self._unlimitedMoney[userId] = nil
+	self._asteroids[userId] = nil
+	self._lastFire[userId] = nil
+	self._nextAsteroidId[userId] = nil
 end
 
 return SessionRegistry

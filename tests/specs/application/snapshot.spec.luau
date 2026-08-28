@@ -25,6 +25,11 @@ describe("Snapshot", function()
 		expect(snap.GlobalBoost).toBe(1.875)
 	end)
 
+	it("mining() carries the flag through as-is", function()
+		expect(Snapshot.mining(true).HasRailgun).toBe(true)
+		expect(Snapshot.mining(false).HasRailgun).toBe(false)
+	end)
+
 	it("production() flattens the nested power/heat stats into a flat table", function()
 		local snap = Snapshot.production({
 			sunlight = 0.5,

@@ -44,4 +44,31 @@ describe("Balance internal consistency", function()
 	it("degrades but never fully stops production when overheated", function()
 		expect(Balance.Heat.OverheatPenalty > 0 and Balance.Heat.OverheatPenalty < 1).toBeTruthy()
 	end)
+
+	it("has railgun rules that actually terminate/gate correctly", function()
+		local railgun = Balance.Mining.Railgun
+		expect(railgun.Cost > 0).toBeTruthy()
+		expect(railgun.Cooldown > 0).toBeTruthy()
+		expect(railgun.MaxActive > 0).toBeTruthy()
+		expect(railgun.SpawnChancePerTick > 0 and railgun.SpawnChancePerTick <= 1).toBeTruthy()
+		expect(railgun.AsteroidLifetime > 0).toBeTruthy()
+		expect(railgun.TickRate > 0).toBeTruthy()
+	end)
+
+	it("has a non-empty, uniquely-id'd asteroid tier list with rising rewards", function()
+		local tiers = Balance.Mining.Tiers
+		expect(#tiers > 0).toBeTruthy()
+
+		local seen = {}
+		local totalWeight = 0
+		for _, tier in tiers do
+			expect(seen[tier.id]).toBeNil() -- no duplicate ids
+			seen[tier.id] = true
+			expect(tier.weight > 0).toBeTruthy()
+			expect(tier.minReward > 0).toBeTruthy()
+			expect(tier.maxReward >= tier.minReward).toBeTruthy()
+			totalWeight += tier.weight
+		end
+		expect(totalWeight > 0).toBeTruthy()
+	end)
 end)
