@@ -28,7 +28,20 @@ local function fromShared(path: string): any
 end
 
 local ModuleCatalog = require(fromShared("Domain/Station/ModuleCatalog"))
+local Balance = require(fromShared("Balance"))
 local Theme = require("../UI/Theme")
+
+-- Read straight from the configuration rather than replicated from the server:
+-- these are constants, identical for every player, and a price the client works
+-- out itself is a price the server never has to send. The server still decides
+-- what an upgrade actually costs when one is bought -- this is a read-out, not
+-- an authority.
+local UPGRADE_RULES = {
+	maxLevel = Balance.Upgrade.MaxLevel,
+	gainPerLevel = Balance.Upgrade.GainPerLevel,
+	costFactor = Balance.Upgrade.CostFactor,
+	minCost = Balance.Upgrade.MinCost,
+}
 
 local LabelController = {}
 
@@ -46,33 +59,81 @@ local function attach(model: Instance)
 		return
 	end
 
-	-- "Body" is the base plate, both for a real catalogue model and for the
-	-- fallback box. Any part is accepted otherwise: a hand-edited model may
-	-- have had it renamed.
-	local body = model:FindFirstChild("Body") or model:FindFirstChildWhichIsA("BasePart")
-	if not body or not body:IsA("BasePart") then
-		return
-	end
-
-	-- The label sits above the model's real TOP, not above its base: a
-	-- smelter's chimney rises well past its catalogue height.
+	-- An invisible anchor placed exactly at the model's true horizontal
+	-- centre and real top (masts, chimneys, domes included), rather than
+	-- adorning to "whichever BasePart happens to be found first" (the old
+	-- "Body" or FindFirstChildWhichIsA("BasePart") lookup). Roblox does not
+	-- guarantee GetChildren() preserves the SERVER's build order once a
+	-- whole subtree replicates in one burst -- and a placed module is built
+	-- complete (40-90+ parts, per ModuleGeometry) before ever being
+	-- parented, so it always replicates as exactly that kind of burst. The
+	-- old lookup was landing on whichever part happened to deserialize
+	-- first -- a corner bolt, a leg, a mast -- and the label floated over
+	-- THAT part's position instead of the model's centre: exactly the
+	-- "sometimes below, sometimes beside" symptom. A dedicated anchor at a
+	-- computed position is deterministic regardless of child order.
 	local center, size = model:GetBoundingBox()
-	local offsetY = (center.Position.Y + size.Y / 2) - body.Position.Y + Theme.Label.Clearance
+	local anchor = Instance.new("Part")
+	anchor.Name = "LabelAnchor"
+	anchor.Transparency = 1
+	anchor.Anchored = true
+	anchor.CanCollide = false
+	anchor.CanQuery = false
+	anchor.CanTouch = false
+	anchor.CastShadow = false
+	anchor.Size = Vector3.new(0.1, 0.1, 0.1)
+	anchor.CFrame = CFrame.new(center.Position.X, center.Position.Y + size.Y / 2, center.Position.Z)
+	anchor.Parent = model
 
-	local label = Theme.worldLabel(body, definition.name, offsetY)
+	local label = Theme.worldLabel(anchor, Theme.Label.Clearance)
 	label.Parent = model
 
 	-- The level lives in a model attribute. Following its changes instead
 	-- of rebuilding the label means an upgrade doesn't make the name flash.
-	local text = label:FindFirstChild("Text")
-	if not text or not text:IsA("TextLabel") then
+	local row = label:FindFirstChild("Row")
+	local text = row and row:FindFirstChild("Text")
+	local upgradeIcon = row and row:FindFirstChild("UpgradeIcon")
+	local costIcon = row and row:FindFirstChild("CostIcon")
+	local costText = row and row:FindFirstChild("UpgradeCost")
+	if
+		not (text and text:IsA("TextLabel"))
+		or not (upgradeIcon and upgradeIcon:IsA("ImageLabel"))
+		or not (costIcon and costIcon:IsA("ImageLabel"))
+		or not (costText and costText:IsA("TextLabel"))
+	then
 		return
 	end
+
+	-- A corridor or a conduit would stay identical after an upgrade, so the
+	-- catalogue says they have no levels -- and a price on them would lie.
+	local upgradable = ModuleCatalog.isUpgradable(definition)
 
 	local function refresh()
 		local level = model:GetAttribute("Level")
 		local rank = if typeof(level) == "number" then math.floor(level) else 1
-		text.Text = `{definition.name}  Nv.{rank}`
+		text.Text = Theme.Words.ModuleLabel(definition.name, rank)
+
+		if not upgradable then
+			upgradeIcon.Visible = false
+			costIcon.Visible = false
+			costText.Visible = false
+			return
+		end
+
+		upgradeIcon.Visible = true
+		costText.Visible = true
+
+		if rank >= UPGRADE_RULES.maxLevel then
+			-- No price at the ceiling: a number there reads as "buyable".
+			costIcon.Visible = false
+			costText.Text = Theme.Words.UpgradeMaxed
+			costText.TextColor3 = Theme.Function.Info
+		else
+			costIcon.Visible = true
+			costText.Text =
+				Theme.Words.UpgradeCost(ModuleCatalog.upgradeCost(definition, rank, UPGRADE_RULES))
+			costText.TextColor3 = Theme.Function.Money
+		end
 	end
 
 	refresh()

@@ -45,6 +45,8 @@ export type RebirthSnapshot = {
 	GlobalBoost: number,
 }
 export type MiningSnapshot = { HasRailgun: boolean }
+export type ResearchSnapshot = { HasResearchMine: boolean }
+export type OreSnapshot = { [string]: number }
 export type ProductionSnapshot = {
 	Sunlight: number,
 	Efficiency: number,
@@ -96,6 +98,20 @@ end
 
 function Snapshot.mining(hasRailgun: boolean): MiningSnapshot
 	return { HasRailgun = hasRailgun }
+end
+
+function Snapshot.research(hasResearchMine: boolean): ResearchSnapshot
+	return { HasResearchMine = hasResearchMine }
+end
+
+-- ONE ORE PER CALL, not the whole bag in one table. Attributes are flat --
+-- numbers, strings and booleans only (see this file's header) -- so an
+-- inventory has to replicate as one attribute per line rather than as a
+-- nested table. "Ore" prefixes the id so a mineral can never collide with a
+-- field like Credits, and so the client can derive the attribute name from
+-- the catalogue instead of keeping a second list in step with this one.
+function Snapshot.ore(oreId: string, count: number): OreSnapshot
+	return { [`Ore{oreId}`] = count }
 end
 
 function Snapshot.production(stats: {

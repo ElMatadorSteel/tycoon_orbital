@@ -33,6 +33,11 @@ export type Profile = {
 	-- Reserved for progression. Already written and read today so there is
 	-- no migration to do the day they get wired up.
 	unlocked: { [string]: boolean },
+	-- What the research mine has produced and the player has not sold yet.
+	-- Keyed by Domain/Research/OreCatalog id. Persisted rather than session-
+	-- only because it is earned, not derived: a disconnection must not empty
+	-- a bag the player spent time filling.
+	ores: { [string]: number },
 	rebirths: number,
 	playtime: number,
 	savedAt: number,
@@ -47,6 +52,7 @@ function Profile.blank(rules: Rules): Profile
 		modules = {},
 		objective = 1,
 		unlocked = {},
+		ores = {},
 		rebirths = 0,
 		playtime = 0,
 		savedAt = 0,
@@ -81,6 +87,22 @@ function Profile.sanitize(raw: any, rules: Rules): Profile
 		for key, value in raw.unlocked do
 			if typeof(key) == "string" and value == true then
 				profile.unlocked[key] = true
+			end
+		end
+	end
+
+	-- A save predating the mine has no bag at all: it starts empty, which is
+	-- exactly right, so there is no migration to write. Ids are NOT checked
+	-- against the catalogue here -- same reason module ids are not (see
+	-- below): this module knows no game rules. An ore retired from the
+	-- catalogue simply appraises at nothing.
+	if typeof(raw.ores) == "table" then
+		for key, value in raw.ores do
+			if typeof(key) == "string" then
+				local count = math.floor(number(value, 0))
+				if count > 0 then
+					profile.ores[key] = count
+				end
 			end
 		end
 	end

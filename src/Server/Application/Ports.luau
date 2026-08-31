@@ -96,6 +96,16 @@ export type SceneBuilder = {
 	) -> (),
 	removeModule: (self: SceneBuilder, userId: number, x: number, y: number) -> (),
 	setModuleLevel: (self: SceneBuilder, userId: number, x: number, y: number, level: number) -> (),
+	-- The research mine: the pad itself is built with the plot (claimPlot),
+	-- locked, and wired to fire researchPadTouched (a Signal, not a direct
+	-- use-case call -- an Adapter invoking Application would invert the
+	-- dependency rule) when its OWNER steps on it. buildResearchMine is what
+	-- a successful UnlockResearchMine resolves to (idempotent: also what
+	-- RestoreResearchMine calls on every reconnection of an owner);
+	-- refuseResearchMine is what an unaffordable attempt resolves to instead.
+	buildResearchMine: (self: SceneBuilder, userId: number) -> boolean,
+	hasResearchMine: (self: SceneBuilder, userId: number) -> boolean,
+	refuseResearchMine: (self: SceneBuilder, userId: number) -> (),
 }
 
 -- Moves a player's character -- to the lobby, or to their claimed station.

@@ -36,12 +36,12 @@ local Grid = require(fromShared("Domain/Grid/Grid"))
 local Layout = require(fromShared("Domain/Plots/Layout"))
 local ModuleCatalog = require(fromShared("Domain/Station/ModuleCatalog"))
 local Placement = require(fromShared("Domain/Station/Placement"))
--- ModuleGeometry lives directly under Shared (not a Server-only Adapter):
--- the CLIENT needs the exact same geometry builder for its build/move ghost
--- preview and BuildPanel's thumbnails, so it moved out from under
--- Server/Adapters/Roblox where only this file could reach it. See CLAUDE.md's
--- module-preview fix notes.
+local Signal = require(fromShared("Signal"))
+-- ModuleGeometry lives directly under Shared now (not a Server-only
+-- Adapter): the CLIENT needs the exact same geometry builder for its
+-- build/move ghost preview and BuildPanel's thumbnails.
 local ModuleGeometry = require(fromShared("ModuleGeometry"))
+local ResearchMineBuilder = require("./ResearchMineBuilder")
 
 type Slot = Layout.Slot
 type ModulePlacement = Placement.ModulePlacement
@@ -87,13 +87,23 @@ local function buildDeck(model: Model, origin: CFrame, span: number, gridRules: 
 	local count = math.floor(span / panelSize)
 	local start = -(count - 1) / 2
 
+	-- PANEL_SEAM used to be 1.4, which left 6% of the deck as open trench
+	-- with the hull slab visible 0.4 studs down -- at character scale that
+	-- reads as a hole in the floor, not as paneling. Kept as a seam rather
+	-- than closed to nothing: the gap is what makes the deck look built out
+	-- of plates, it just has to be a line rather than a gutter.
+	--
+	-- The extra 0.1 of thickness sinks each panel into the slab instead of
+	-- resting exactly on it, so the two never share a face.
+	local PANEL_SEAM = 0.3
+
 	for ix = 0, count - 1 do
 		for iz = 0, count - 1 do
 			local shaded = (ix + iz) % 2 == 0
 			part(model, "Panel", {
-				Size = Vector3.new(panelSize - 1.4, 0.4, panelSize - 1.4),
+				Size = Vector3.new(panelSize - PANEL_SEAM, 0.5, panelSize - PANEL_SEAM),
 				CFrame = origin
-					* CFrame.new((start + ix) * panelSize, -0.2, (start + iz) * panelSize),
+					* CFrame.new((start + ix) * panelSize, -0.25, (start + iz) * panelSize),
 				Color = if shaded then PALETTE.Hull else PALETTE.HullShade,
 				Material = Enum.Material.Metal,
 				CanCollide = true,
@@ -101,12 +111,18 @@ local function buildDeck(model: Model, origin: CFrame, span: number, gridRules: 
 		end
 	end
 
+	-- The two sets of lines cross at all 625 cell corners. Drawn at the same
+	-- height they hand the depth buffer 625 pairs of coplanar faces to choose
+	-- between, and it chooses differently frame to frame -- which is what the
+	-- deck was flickering about. Lifting one set clear of the other settles
+	-- every crossing at once; 0.04 studs is under a pixel to look at and an
+	-- unambiguous ordering to render.
 	local cells = gridRules.radius * 2 + 1
 	for index = 0, cells do
 		local offset = -span / 2 + index * gridRules.cellSize
 		part(model, "GridX", {
 			Size = Vector3.new(span, 0.06, GRID_LINE_WIDTH),
-			CFrame = origin * CFrame.new(0, -0.01, offset),
+			CFrame = origin * CFrame.new(0, 0.03, offset),
 			Color = PALETTE.Grid,
 			Material = Enum.Material.SmoothPlastic,
 			CanQuery = false,
@@ -129,14 +145,19 @@ local function buildRim(model: Model, origin: CFrame, span: number)
 
 	for _, axis in { true, false } do
 		for _, sign in { -1, 1 } do
+			-- All four walls run long, so each pair meets in an overlapping
+			-- square at the corners. Dropping the two X-side walls by a hair
+			-- means the faces that meet there are never the same plane -- the
+			-- same fight the grid lines above were picking, four times over.
+			local height = RIM_HEIGHT - (if axis then 0 else 0.05)
 			local offset = if axis
-				then Vector3.new(0, RIM_HEIGHT / 2, sign * half)
-				else Vector3.new(sign * half, RIM_HEIGHT / 2, 0)
+				then Vector3.new(0, height / 2, sign * half)
+				else Vector3.new(sign * half, height / 2, 0)
 
 			part(model, "Rim", {
 				Size = if axis
-					then Vector3.new(span + 3, RIM_HEIGHT, 1.6)
-					else Vector3.new(1.6, RIM_HEIGHT, span + 3),
+					then Vector3.new(span + 3, height, 1.6)
+					else Vector3.new(1.6, height, span + 3),
 				CFrame = origin * CFrame.new(offset),
 				Color = PALETTE.Frame,
 				Material = Enum.Material.Metal,
@@ -146,7 +167,7 @@ local function buildRim(model: Model, origin: CFrame, span: number)
 				Size = if axis
 					then Vector3.new(span + 3.4, 0.4, 0.5)
 					else Vector3.new(0.5, 0.4, span + 3.4),
-				CFrame = origin * CFrame.new(offset + Vector3.new(0, RIM_HEIGHT / 2, 0)),
+				CFrame = origin * CFrame.new(offset + Vector3.new(0, height / 2, 0)),
 				Color = PALETTE.Trim,
 				Material = Enum.Material.Neon,
 			})
@@ -280,8 +301,15 @@ local function buildWings(model: Model, origin: CFrame, span: number)
 	light.Parent = beacon
 end
 
+-- The deck is exactly the grid: 25 cells of 8 studs. Written once because
+-- the research extension has to butt up against the same edge the rim does,
+-- and two copies of that arithmetic drift the day the grid is resized.
+local function spanOf(gridRules: Grid.Rules): number
+	return (gridRules.radius * 2 + 1) * gridRules.cellSize
+end
+
 local function buildStructure(index: number, origin: CFrame, gridRules: Grid.Rules): Model
-	local span = (gridRules.radius * 2 + 1) * gridRules.cellSize
+	local span = spanOf(gridRules)
 
 	local model = Instance.new("Model")
 	model.Name = `Plot_{index}`
@@ -408,17 +436,29 @@ export type Config = {
 	layoutRules: Layout.Rules,
 	plotsParent: Instance, -- workspace.Plots
 	stationsParent: Instance, -- workspace.Stations
+	-- Shown on the research pad's sign. A plain number like maxLevel above,
+	-- not a port: the pad has to be able to say what it costs before anyone
+	-- steps on it, and reading Balance from an adapter is what this project
+	-- does not do.
+	researchMineCost: number,
 }
 
 function StationSceneBuilder.new(config: Config)
 	return setmetatable({
 		_config = config,
+		-- Fired with the userId whose own pad was stepped on. A signal rather
+		-- than a use-case call from in here: an adapter that invokes
+		-- Application inverts the dependency rule, and the answer has to come
+		-- back out anyway so the pad can refuse (see :refuseResearchMine).
+		researchPadTouched = Signal.new(),
 		_slots = Layout.slots(config.layoutRules),
 		_owner = {} :: { [number]: number }, -- slotIndex -> userId
 		_origin = {} :: { [number]: CFrame }, -- userId -> plot origin
 		_structure = {} :: { [number]: Model }, -- userId -> plot structure
 		_folder = {} :: { [number]: Folder }, -- userId -> module container
 		_spawn = {} :: { [number]: SpawnLocation }, -- userId -> station spawn point
+		_pad = {} :: { [number]: any }, -- userId -> ResearchMineBuilder.PadHandle
+		_mine = {} :: { [number]: Model }, -- userId -> research mine, once opened
 		_models = {} :: { [number]: { [string]: Model } }, -- userId -> gridKey -> module Model
 	}, StationSceneBuilder)
 end
@@ -461,6 +501,42 @@ function StationSceneBuilder:claimPlot(userId: number): boolean
 			spawnPart.Transparency = 1
 			spawnPart.CanCollide = false
 			spawnPart.Parent = folder
+
+			-- Built with the plot, not with the mine: a tycoon pad has to be
+			-- standing there, priced, long before it is affordable -- that is
+			-- the whole mechanic. It goes in the structure rather than in the
+			-- module folder so releasePlot takes it down with everything else.
+			local pad = ResearchMineBuilder.buildAccessPad(
+				structure,
+				origin,
+				spanOf(self._config.gridRules),
+				self._config.researchMineCost
+			)
+			self._pad[userId] = pad
+
+			local lastTouch = 0
+			pad.pad.Touched:Connect(function(hit: BasePart)
+				-- Touched fires every frame a foot rests on the pad and the use
+				-- case behind it loads a profile. Gated on elapsed time rather
+				-- than on a boolean flag: a flag left set by an early return
+				-- jams the pad shut for the rest of the session.
+				local now = os.clock()
+				if now - lastTouch < 0.75 then
+					return
+				end
+
+				local character = hit:FindFirstAncestorOfClass("Model")
+				local player = character
+					and game:GetService("Players"):GetPlayerFromCharacter(character)
+				-- The owner and nobody else: a visitor walking across someone
+				-- else's deck must not spend their credits for them.
+				if not player or player.UserId ~= userId then
+					return
+				end
+
+				lastTouch = now
+				self.researchPadTouched:Fire(userId)
+			end)
 
 			self._origin[userId] = origin
 			self._structure[userId] = structure
@@ -522,6 +598,58 @@ function StationSceneBuilder:releasePlot(userId: number)
 	self._origin[userId] = nil
 	self._spawn[userId] = nil
 	self._models[userId] = nil
+	-- Both live under the structure destroyed above -- only the references
+	-- are dropped here.
+	self._pad[userId] = nil
+	self._mine[userId] = nil
+end
+
+----------------------------------------------------------------------
+-- The research mine
+
+-- Idempotent, and it has to be: the pad calls it on purchase and
+-- RestoreStation calls it again on every reconnection of a player who
+-- already owns one. Returns false only when there is no plot to build onto.
+function StationSceneBuilder:buildResearchMine(userId: number): boolean
+	if self._mine[userId] then
+		return true
+	end
+
+	local origin = self._origin[userId]
+	local structure = self._structure[userId]
+	if not origin or not structure then
+		return false
+	end
+
+	local zone = ResearchMineBuilder.buildZone(structure, origin, spanOf(self._config.gridRules))
+	-- Named with the userId baked in, not just ResearchMineBuilder's own
+	-- generic "ResearchMine": the zone sits nested inside the anonymous
+	-- Plot_<slotIndex> structure, which the client has no way to resolve as
+	-- "mine" -- ResearchController finds its own zone with a RECURSIVE
+	-- FindFirstChild by this exact name instead (same problem, same fix, as
+	-- Station_<userId> already solves for the module folder one level up).
+	zone.Name = `ResearchMine_{userId}`
+	self._mine[userId] = zone
+
+	local pad = self._pad[userId]
+	if pad then
+		ResearchMineBuilder.markUnlocked(pad)
+	end
+
+	return true
+end
+
+function StationSceneBuilder:hasResearchMine(userId: number): boolean
+	return self._mine[userId] ~= nil
+end
+
+-- What a player who cannot afford it actually sees. The decision was taken
+-- by the use case; showing it is geometry, so it lands here.
+function StationSceneBuilder:refuseResearchMine(userId: number)
+	local pad = self._pad[userId]
+	if pad then
+		ResearchMineBuilder.refuse(pad)
+	end
 end
 
 function StationSceneBuilder:placeModule(

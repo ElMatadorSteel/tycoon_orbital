@@ -24,6 +24,12 @@ local DEFINITIONS = {
 	RebirthStation = "RemoteFunction",
 	PurchaseRailgun = "RemoteFunction",
 	FireRailgun = "RemoteFunction",
+	-- UnlockResearchMine has no remote of its own: the pad is a walk-onto
+	-- trigger (StationSceneBuilder's researchPadTouched Signal, wired in
+	-- Composition/Bootstrap.luau), same as the legacy LaunchPad, not a
+	-- client-initiated purchase like the Railgun's pad.
+	MineVein = "RemoteFunction",
+	SellOres = "RemoteFunction",
 	-- Only ever bound server-side when Bootstrap was built in development
 	-- mode (see Container.luau's `development` flag) -- exist as Instances
 	-- either way (Net.luau always creates every remote listed here), they

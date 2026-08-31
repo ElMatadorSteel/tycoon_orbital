@@ -33,6 +33,7 @@ export type Dependencies = {
 	sceneBuilder: any, -- Ports.SceneBuilder
 	teleporter: any, -- Ports.Teleporter
 	restoreStation: any, -- Application.UseCases.RestoreStation
+	restoreResearchMine: any, -- Application.UseCases.RestoreResearchMine
 }
 
 local EmbarkStation = {}
@@ -50,6 +51,14 @@ function EmbarkStation:run(userId: number): Result<nil, string>
 	if not self.sessionRegistry:hasRestored(userId) then
 		self.restoreStation:run(userId)
 		self.sessionRegistry:setRestored(userId, true)
+	end
+
+	-- Same one-per-session gate, same reason: the research-mine ZONE is
+	-- memory-only, and re-embarking after a lobby trip must not try to
+	-- rebuild it on top of the one already standing.
+	if not self.sessionRegistry:hasBuiltResearchMine(userId) then
+		self.restoreResearchMine:run(userId)
+		self.sessionRegistry:setBuiltResearchMine(userId, true)
 	end
 
 	self.sessionRegistry:setEmbarked(userId, true)

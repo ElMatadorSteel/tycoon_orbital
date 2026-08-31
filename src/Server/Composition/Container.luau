@@ -32,6 +32,8 @@ local Rebirth = require(fromShared("Domain/Rebirth/Rebirth"))
 local Profile = require(fromShared("Domain/Profile/Profile"))
 local Railgun = require(fromShared("Domain/Mining/Railgun"))
 local AsteroidTiers = require(fromShared("Domain/Mining/AsteroidTiers"))
+local ResearchMine = require(fromShared("Domain/Research/ResearchMine"))
+local Vein = require(fromShared("Domain/Research/Vein"))
 local SpendCredits = require("../Application/UseCases/SpendCredits")
 local AddCredits = require("../Application/UseCases/AddCredits")
 local PlaceModule = require("../Application/UseCases/PlaceModule")
@@ -51,6 +53,10 @@ local DevResetAll = require("../Application/UseCases/DevResetAll")
 local PurchaseRailgun = require("../Application/UseCases/PurchaseRailgun")
 local RunMiningTick = require("../Application/UseCases/RunMiningTick")
 local FireRailgun = require("../Application/UseCases/FireRailgun")
+local UnlockResearchMine = require("../Application/UseCases/UnlockResearchMine")
+local RestoreResearchMine = require("../Application/UseCases/RestoreResearchMine")
+local MineVein = require("../Application/UseCases/MineVein")
+local SellOres = require("../Application/UseCases/SellOres")
 
 export type Ports = {
 	profileRepository: any, -- Ports.ProfileRepository
@@ -80,6 +86,8 @@ export type Rules = {
 	railgun: Railgun.Rules,
 	asteroidTiers: AsteroidTiers.Rules,
 	asteroidLifetime: number, -- seconds an asteroid is shootable before it flies past
+	researchMine: ResearchMine.Rules,
+	vein: Vein.Rules,
 }
 
 export type Container = {
@@ -102,6 +110,10 @@ export type Container = {
 		purchaseRailgun: any,
 		runMiningTick: any,
 		fireRailgun: any,
+		unlockResearchMine: any,
+		restoreResearchMine: any,
+		mineVein: any,
+		sellOres: any,
 		-- Only present when built with development = true:
 		devSetPass: any?,
 		devSetRebirths: any?,
@@ -141,6 +153,11 @@ function Container.new(
 		sceneBuilder = ports.sceneBuilder,
 		gridRules = rules.grid,
 	}, RestoreStation)
+
+	local restoreResearchMine = setmetatable({
+		profileRepository = ports.profileRepository,
+		sceneBuilder = ports.sceneBuilder,
+	}, RestoreResearchMine)
 
 	-- Each use case gets its OWN dependency table, built fresh here rather
 	-- than cloned from one shared bag: what matters is that no two use
@@ -201,6 +218,7 @@ function Container.new(
 			sceneBuilder = ports.sceneBuilder,
 			teleporter = ports.teleporter,
 			restoreStation = restoreStation,
+			restoreResearchMine = restoreResearchMine,
 		}, EmbarkStation),
 
 		returnToLobby = setmetatable({
@@ -265,6 +283,29 @@ function Container.new(
 			railgunRules = rules.railgun,
 			tierRules = rules.asteroidTiers,
 		}, FireRailgun),
+
+		unlockResearchMine = setmetatable({
+			profileRepository = ports.profileRepository,
+			statsPublisher = ports.statsPublisher,
+			sceneBuilder = ports.sceneBuilder,
+			researchRules = rules.researchMine,
+		}, UnlockResearchMine),
+
+		restoreResearchMine = restoreResearchMine,
+
+		mineVein = setmetatable({
+			profileRepository = ports.profileRepository,
+			sessionRegistry = sessionRegistry,
+			statsPublisher = ports.statsPublisher,
+			clock = ports.clock,
+			veinRules = rules.vein,
+		}, MineVein),
+
+		sellOres = setmetatable({
+			profileRepository = ports.profileRepository,
+			statsPublisher = ports.statsPublisher,
+			notifier = ports.notifier,
+		}, SellOres),
 	}
 
 	-- Dev-only affordances, never present in production: see CLAUDE.md's

@@ -108,6 +108,28 @@ local Balance = {
 		UltimateMultiplier = 1.5, -- flat multiplier while the paid Ultimate pass is owned
 	},
 
+	-- The research mine: a walkable extension of the player's own plot,
+	-- opened once by stepping on a tycoon pad at the edge of the deck. Only
+	-- the price and the mining pace live here. The dimensions of the path
+	-- and of the pit are shape, not balance -- they stay local constants in
+	-- Adapters/Roblox/ResearchMineBuilder, same as RIM_HEIGHT does in
+	-- StationSceneBuilder and the layout jitter does in Domain/Plots/Layout.
+	Research = {
+		Mine = {
+			-- Three times the Railgun, and a few production ticks past the
+			-- first couple of upgrades: the pad should be visible from the
+			-- first minute and affordable from the tenth, so it reads as the
+			-- next goal rather than as scenery.
+			Cost = 2500,
+		},
+		Vein = {
+			-- Slower than the Railgun's 1.5s: a vein is a fixture you return
+			-- to again and again rather than a target that flies past, so the
+			-- pace has to feel like digging, not like shooting.
+			Cooldown = 4,
+		},
+	},
+
 	-- Optional side content: a purchasable Railgun that shoots passing
 	-- asteroids near a player's own station for bonus credits. Entirely
 	-- separate from the main build/upgrade/rebirth loop -- nothing here

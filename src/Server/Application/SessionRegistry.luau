@@ -35,6 +35,17 @@
 --     reasoning as `production`: an asteroid flying past has no meaning
 --     across a disconnect, and the profile only ever needs to know the
 --     credits a hit already earned, not the asteroid itself.
+--   - researchMineBuilt: whether the research-mine ZONE (the pit, the
+--     gangway, the veins) has already been built for this player THIS
+--     SESSION -- same "session data rebuilt from a persisted flag" shape as
+--     `restored`: the zone is memory-only, so EmbarkStation rebuilds it
+--     from profile.unlocked.ResearchMine on the first embark of the
+--     session, and this flag stops a lobby-and-back trip from building it a
+--     second time on top of the one already standing.
+--   - veinCooldowns: when a player last mined a given vein (keyed by
+--     OreCatalog.veinId), so MineVein can enforce Balance.Research.Vein
+--     .Cooldown per vein rather than globally -- mining the rim vein does
+--     not lock the floor vein.
 
 export type ProductionState = { charge: number, pendingCredit: number }
 export type AsteroidState = { tier: string, spawnedAt: number }
@@ -51,6 +62,8 @@ function SessionRegistry.new()
 		_asteroids = {} :: { [number]: { [string]: AsteroidState } },
 		_lastFire = {} :: { [number]: number },
 		_nextAsteroidId = {} :: { [number]: number },
+		_researchMineBuilt = {} :: { [number]: boolean },
+		_veinCooldowns = {} :: { [number]: { [string]: number } },
 	}, SessionRegistry)
 end
 
@@ -124,6 +137,28 @@ function SessionRegistry:setLastFire(userId: number, now: number)
 	self._lastFire[userId] = now
 end
 
+function SessionRegistry:hasBuiltResearchMine(userId: number): boolean
+	return self._researchMineBuilt[userId] == true
+end
+
+function SessionRegistry:setBuiltResearchMine(userId: number, value: boolean)
+	self._researchMineBuilt[userId] = value
+end
+
+function SessionRegistry:lastVeinMine(userId: number, veinId: string): number
+	local cooldowns = self._veinCooldowns[userId]
+	return (cooldowns and cooldowns[veinId]) or -math.huge -- never mined: no cooldown to wait out
+end
+
+function SessionRegistry:setLastVeinMine(userId: number, veinId: string, now: number)
+	local cooldowns = self._veinCooldowns[userId]
+	if not cooldowns then
+		cooldowns = {}
+		self._veinCooldowns[userId] = cooldowns
+	end
+	cooldowns[veinId] = now
+end
+
 -- Call on PlayerRemoving, once this is wired into a real bootstrap: nothing
 -- here should outlive the connection it belongs to.
 function SessionRegistry:release(userId: number)
@@ -134,6 +169,8 @@ function SessionRegistry:release(userId: number)
 	self._asteroids[userId] = nil
 	self._lastFire[userId] = nil
 	self._nextAsteroidId[userId] = nil
+	self._researchMineBuilt[userId] = nil
+	self._veinCooldowns[userId] = nil
 end
 
 return SessionRegistry

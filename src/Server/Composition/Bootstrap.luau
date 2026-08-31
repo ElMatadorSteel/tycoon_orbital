@@ -114,6 +114,7 @@ function Bootstrap.start()
 		},
 		plotsParent = workspace:WaitForChild("Plots"),
 		stationsParent = workspace:WaitForChild("Stations"),
+		researchMineCost = Balance.Research.Mine.Cost,
 	})
 
 	-- Lobby scene contract -- unchanged from the legacy LobbyService: the
@@ -204,6 +205,8 @@ function Bootstrap.start()
 			},
 			asteroidTiers = { tiers = Balance.Mining.Tiers },
 			asteroidLifetime = Balance.Mining.Railgun.AsteroidLifetime,
+			researchMine = { cost = Balance.Research.Mine.Cost },
+			vein = { cooldown = Balance.Research.Vein.Cooldown },
 		},
 		development = RunService:IsStudio(),
 	})
@@ -214,6 +217,14 @@ function Bootstrap.start()
 	-- claimed.
 	launchPrompt.Triggered:Connect(function(player: Player)
 		container.useCases.embarkStation:run(player.UserId)
+	end)
+
+	-- The research-mine pad: a walk-onto trigger, same shape as LaunchPad
+	-- above, not a client-initiated purchase -- StationSceneBuilder already
+	-- ownership-checks and debounces the Touched event itself (see its own
+	-- claimPlot), this only ever runs the use case behind it.
+	sceneBuilder.researchPadTouched:Connect(function(userId: number)
+		container.useCases.unlockResearchMine:run(userId)
 	end)
 
 	-- We load the character ourselves, once the spawn point is known --
@@ -239,6 +250,14 @@ function Bootstrap.start()
 		container.ports.statsPublisher:publish(
 			player.UserId,
 			Snapshot.rebirth(profile.rebirths, hasUltimate, hasEarlyPass, boost)
+		)
+		container.ports.statsPublisher:publish(
+			player.UserId,
+			Snapshot.mining(profile.unlocked.Railgun == true)
+		)
+		container.ports.statsPublisher:publish(
+			player.UserId,
+			Snapshot.research(profile.unlocked.ResearchMine == true)
 		)
 
 		container.useCases.returnToLobby:run(player.UserId)
