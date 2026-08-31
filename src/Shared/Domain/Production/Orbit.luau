@@ -27,4 +27,31 @@ function Orbit.sunlightAt(elapsed: number, rules: Rules): number
 	return (1 - phase) / RAMP
 end
 
+-- What the HUD needs and sunlightAt cannot give it: a single reading tells you
+-- how bright it is now, never how long that lasts.
+--
+-- `inEclipse` means "not at full sun" -- the ramps count as eclipse, because a
+-- player watching their output fall does not care that the shadow is only
+-- partial yet.
+export type Phase = { inEclipse: boolean, secondsUntilChange: number }
+
+function Orbit.eclipseAt(elapsed: number, rules: Rules): Phase
+	local phase = (elapsed % rules.period) / rules.period
+	local sunrise = rules.eclipseFraction -- full sun begins
+	local sunset = 1 - RAMP -- full sun ends
+
+	if phase >= sunrise and phase < sunset then
+		return { inEclipse = false, secondsUntilChange = (sunset - phase) * rules.period }
+	end
+
+	-- The shadow straddles the wrap point: past sunset the next sunrise is in
+	-- the NEXT revolution, so the difference has to be brought back positive
+	-- before it means anything.
+	local remaining = sunrise - phase
+	if remaining <= 0 then
+		remaining += 1
+	end
+	return { inEclipse = true, secondsUntilChange = remaining * rules.period }
+end
+
 return Orbit

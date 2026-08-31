@@ -55,6 +55,11 @@ export type ProductionSnapshot = {
 	HeatLoad: number,
 	HeatCapacity: number,
 	Income: number,
+	-- The orbital countdown. Published as a duration rather than as a deadline:
+	-- an absolute time would need the client and the server to agree on a clock,
+	-- and they do not. The client counts this one down locally between ticks.
+	EclipseIn: number,
+	InEclipse: boolean,
 }
 
 local Snapshot = {}
@@ -99,6 +104,8 @@ function Snapshot.production(stats: {
 	power: Simulation.PowerStats,
 	heat: Simulation.HeatStats,
 	income: number,
+	eclipseIn: number,
+	inEclipse: boolean,
 }): ProductionSnapshot
 	return {
 		Sunlight = stats.sunlight,
@@ -110,6 +117,8 @@ function Snapshot.production(stats: {
 		HeatLoad = stats.heat.load,
 		HeatCapacity = stats.heat.capacity,
 		Income = stats.income,
+		EclipseIn = stats.eclipseIn,
+		InEclipse = stats.inEclipse,
 	}
 end
 

@@ -55,6 +55,8 @@ export type TickStats = {
 	power: Simulation.PowerStats,
 	heat: Simulation.HeatStats,
 	income: number,
+	eclipseIn: number,
+	inEclipse: boolean,
 }
 
 local RunProductionTick = {}
@@ -69,7 +71,11 @@ function RunProductionTick:run(userId: number, deltaTime: number): TickStats
 	-- (see DataStoreProfileRepository's header), this is not a fresh read.
 	local profile = self.profileRepository:load(userId)
 
-	local sunlight = Orbit.sunlightAt(self.clock:monotonic(), self.orbitRules)
+	-- One reading of the clock for both, so the light the simulation applies and
+	-- the countdown the player is shown can never describe different moments.
+	local elapsed = self.clock:monotonic()
+	local sunlight = Orbit.sunlightAt(elapsed, self.orbitRules)
+	local phase = Orbit.eclipseAt(elapsed, self.orbitRules)
 	local hasUltimate = profile.unlocked[Rebirth.Passes.Ultimate] == true
 	local globalBoost = Rebirth.multiplier(profile.rebirths, hasUltimate, self.rebirthRules)
 
@@ -124,6 +130,8 @@ function RunProductionTick:run(userId: number, deltaTime: number): TickStats
 		power = result.power,
 		heat = result.heat,
 		income = result.income,
+		eclipseIn = phase.secondsUntilChange,
+		inEclipse = phase.inEclipse,
 	}
 	self.statsPublisher:publish(userId, Snapshot.production(stats))
 

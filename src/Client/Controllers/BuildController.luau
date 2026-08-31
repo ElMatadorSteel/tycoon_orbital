@@ -39,6 +39,7 @@ end
 local Balance = require(fromShared("Balance"))
 local Grid = require(fromShared("Domain/Grid/Grid"))
 local ModuleCatalog = require(fromShared("Domain/Station/ModuleCatalog"))
+local ModuleGeometry = require(fromShared("ModuleGeometry"))
 local Net = require(fromShared("Net"))
 local State = require("../State")
 
@@ -48,6 +49,7 @@ local Theme = require("../UI/Theme")
 local COLORS = Theme.Colors
 
 local GRID_RULES: Grid.Rules = { cellSize = Balance.Grid.CellSize, radius = Balance.Grid.Radius }
+local MAX_LEVEL = Balance.Upgrade.MaxLevel
 
 -- Roblox recreates the camera on respawn: re-read it on every access
 -- instead of keeping a reference that would go stale.
@@ -72,7 +74,7 @@ local VIEW = {
 	PanSpeed = 70,
 }
 
-type Entry = { id: string, x: number, y: number, rotation: number }
+type Entry = { id: string, x: number, y: number, rotation: number, level: number }
 
 local BuildController = {}
 
@@ -83,6 +85,7 @@ BuildController._demolishing = false
 BuildController._upgrading = false
 BuildController._modifying = false
 BuildController._movingFrom = nil :: { x: number, y: number }?
+BuildController._movingLevel = nil :: number?
 BuildController._origin = nil :: CFrame?
 BuildController._occupancy = {} :: { [string]: Entry }
 BuildController._credits = 0
@@ -127,11 +130,13 @@ function BuildController:_syncOccupancy()
 		local x = model:GetAttribute("X")
 		local y = model:GetAttribute("Y")
 		local rotation = model:GetAttribute("Rotation")
+		local level = model:GetAttribute("Level")
 		if
 			typeof(id) ~= "string"
 			or typeof(x) ~= "number"
 			or typeof(y) ~= "number"
 			or typeof(rotation) ~= "number"
+			or typeof(level) ~= "number"
 		then
 			continue
 		end
@@ -141,7 +146,7 @@ function BuildController:_syncOccupancy()
 			continue
 		end
 
-		local entry: Entry = { id = id, x = x, y = y, rotation = rotation }
+		local entry: Entry = { id = id, x = x, y = y, rotation = rotation, level = level }
 		local width, depth = ModuleCatalog.sizeOf(definition, rotation)
 		for _, cell in Grid.cells(x, y, width, depth) do
 			self._occupancy[Grid.key(cell.x, cell.y)] = entry
@@ -384,11 +389,21 @@ end
 ----------------------------------------------------------------------
 -- Preview
 --
--- The ghost clones the real catalogue model (ReplicatedStorage.ModuleModels,
--- same contract as StationSceneBuilder) instead of a generic box: it shows
--- the exact shape AND facing before placing -- essential once a module
--- isn't symmetric (collector, smelter, cargo bay...). Falls back to the
--- same box as the real placement when no template exists.
+-- The ghost is built from the SAME ModuleGeometry the server uses for the
+-- real placement (StationSceneBuilder.buildModuleModel), not a generic box:
+-- it shows the exact shape, facing AND level before placing -- essential
+-- once a module isn't symmetric (collector, smelter, cargo bay...) and once
+-- a module's look actually changes with its level. Building for a NEW
+-- module (from the catalogue) always previews level 1 -- that is what
+-- placing pays for. Picking one UP to move it (self._movingFrom set)
+-- previews it at its OWN current level (self._movingLevel, captured in
+-- _pickUpForMove) -- moving never changes a module's level, so the ghost
+-- must not silently reset it to 1 either.
+--
+-- Falls back to the legacy ReplicatedStorage.ModuleModels template, then to
+-- a generic box, in exactly the same order StationSceneBuilder falls back
+-- server-side -- so the preview and the real placement can never disagree
+-- about which module ids have geometry.
 
 local GHOST_TRANSPARENCY_BOOST = 0.55 -- added to the model's own transparency
 local GHOST_TRANSPARENCY_MAX = 0.85 -- never fully invisible
@@ -442,9 +457,15 @@ function BuildController:_rebuildGhost()
 	local ghost: Model | BasePart
 	local highlight: Highlight? = nil
 
-	local template = templateFor(definition.id)
-	if template then
-		local model = template:Clone()
+	-- New build -> always level 1 (what placing actually buys). Moving an
+	-- existing module -> its own current level, captured when it was picked
+	-- up -- never assume 1 here, or the ghost would misrepresent an upgraded
+	-- module as freshly built.
+	local level = if self._movingFrom then self._movingLevel or 1 else 1
+	local built = ModuleGeometry.build(definition, GRID_RULES.cellSize, level, MAX_LEVEL)
+	local template = if not built then templateFor(definition.id) else nil
+	if built or template then
+		local model = if built then built else (template :: Model):Clone()
 		model.Name = "Ghost"
 		model.PrimaryPart = nil
 
@@ -749,6 +770,7 @@ end
 -- an existing placement instead of the catalogue.
 function BuildController:_pickUpForMove(entry: Entry)
 	self._movingFrom = { x = entry.x, y = entry.y }
+	self._movingLevel = entry.level
 	self._selected = entry.id
 	self._rotation = entry.rotation
 	self:_destroyHighlight()
@@ -761,6 +783,7 @@ function BuildController:_cancelMove()
 		return
 	end
 	self._movingFrom = nil
+	self._movingLevel = nil
 	self._selected = nil
 	self._rotation = 0
 	self:_destroyGhost()
@@ -856,6 +879,7 @@ function BuildController:_confirmMove()
 	self._panel:Toast(if ok then "Module déplacé" else tostring(reason), not ok)
 
 	self._movingFrom = nil
+	self._movingLevel = nil
 	self._selected = nil
 	self._rotation = 0
 	self:_destroyGhost()

@@ -35,13 +35,22 @@ local function fromShared(path: string): any
 	return "../../Shared/" .. path
 end
 
+local Balance = require(fromShared("Balance"))
 local Icons = require(fromShared("Icons"))
 local ModuleCatalog = require(fromShared("Domain/Station/ModuleCatalog"))
+local ModuleGeometry = require(fromShared("ModuleGeometry"))
 local ModuleVisuals = require("./ModuleVisuals")
 local Theme = require("./Theme")
 
--- Module geometry, for the card thumbnails. With a timeout: if the folder
--- is missing, fall back to the icon pack rather than blocking the menu.
+-- Card thumbnails are built from the SAME ModuleGeometry the server places
+-- with (StationSceneBuilder.buildModuleModel), always at level 1 -- a card
+-- shows what buying the module gets you, never an upgraded look nobody has
+-- paid for yet. Falls back to the legacy ReplicatedStorage.ModuleModels
+-- template, then to the icon pack, in the same order the build ghost and
+-- the server's own placement already fall back in.
+local THUMB_CELL_SIZE = Balance.Grid.CellSize
+local THUMB_MAX_LEVEL = Balance.Upgrade.MaxLevel
+
 local ModuleModels = ReplicatedStorage:WaitForChild("ModuleModels", 10)
 if not ModuleModels then
 	warn("[BuildPanel] ReplicatedStorage.ModuleModels missing -- cards fall back to icons")
@@ -106,10 +115,17 @@ local function buildCard(definition: ModuleCatalog.ModuleDef)
 	local children = { nameLabel }
 
 	-- Show the object itself rather than a generic icon: the player
-	-- recognizes what they're about to place. The icon pack stays the
-	-- fallback, for a module without a model yet.
-	local template = if ModuleModels then ModuleModels:FindFirstChild(definition.id) else nil
-	if template and template:IsA("Model") then
+	-- recognizes what they're about to place. Built at level 1 -- a card is
+	-- what BUYING the module looks like, never an upgraded look nobody has
+	-- paid for. The icon pack stays the fallback, for a module without a
+	-- model yet.
+	local built = ModuleGeometry.build(definition, THUMB_CELL_SIZE, 1, THUMB_MAX_LEVEL)
+	local legacyTemplate = if not built and ModuleModels
+		then ModuleModels:FindFirstChild(definition.id)
+		else nil
+	local template = built
+		or (if legacyTemplate and legacyTemplate:IsA("Model") then legacyTemplate else nil)
+	if template then
 		table.insert(
 			children,
 			Theme.modelThumb(template, {
@@ -118,6 +134,11 @@ local function buildCard(definition: ModuleCatalog.ModuleDef)
 				Size = UDim2.fromOffset(68, 64),
 			})
 		)
+		-- modelThumb clones the model in; the source built here has nothing
+		-- left to do once that clone exists.
+		if built then
+			built:Destroy()
+		end
 	else
 		local iconId = ModuleVisuals.iconFor(definition.id)
 		if iconId then

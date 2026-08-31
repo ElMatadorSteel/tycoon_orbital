@@ -36,22 +36,20 @@ local Grid = require(fromShared("Domain/Grid/Grid"))
 local Layout = require(fromShared("Domain/Plots/Layout"))
 local ModuleCatalog = require(fromShared("Domain/Station/ModuleCatalog"))
 local Placement = require(fromShared("Domain/Station/Placement"))
+-- ModuleGeometry lives directly under Shared (not a Server-only Adapter):
+-- the CLIENT needs the exact same geometry builder for its build/move ghost
+-- preview and BuildPanel's thumbnails, so it moved out from under
+-- Server/Adapters/Roblox where only this file could reach it. See CLAUDE.md's
+-- module-preview fix notes.
+local ModuleGeometry = require(fromShared("ModuleGeometry"))
 
 type Slot = Layout.Slot
 type ModulePlacement = Placement.ModulePlacement
 
-local PALETTE = {
-	Hull = Color3.fromRGB(182, 190, 205),
-	HullShade = Color3.fromRGB(140, 149, 170),
-	Seam = Color3.fromRGB(44, 48, 68),
-	Frame = Color3.fromRGB(74, 80, 104),
-	Trim = Color3.fromRGB(72, 214, 255),
-	Solar = Color3.fromRGB(30, 48, 104),
-	Thruster = Color3.fromRGB(255, 146, 66),
-	Grid = Color3.fromRGB(58, 64, 88),
-	Radiator = Color3.fromRGB(228, 232, 240),
-	Beacon = Color3.fromRGB(255, 90, 90),
-}
+-- One palette for the whole station, owned by ModuleGeometry: the deck built
+-- here and the modules built there have to sit in the same world, and two
+-- copies of a colour list drift the moment one of them is retuned.
+local PALETTE = ModuleGeometry.Palette
 
 local PANEL_CELLS = 5 -- one hull panel covers 5 cells
 local GRID_LINE_WIDTH = 0.16
@@ -328,7 +326,9 @@ local function buildModuleModel(
 	y: number,
 	rotation: number,
 	origin: CFrame,
-	gridRules: Grid.Rules
+	gridRules: Grid.Rules,
+	level: number,
+	maxLevel: number
 ): Model
 	local width, height = ModuleCatalog.sizeOf(definition, rotation)
 	local offset = Grid.offset(x, y, width, height, gridRules)
@@ -339,6 +339,18 @@ local function buildModuleModel(
 	local pivot = origin
 		* CFrame.new(offset.x, offset.y, offset.z)
 		* CFrame.Angles(0, -math.rad(90) * rotation, 0)
+
+	-- Built from code first. ModuleModels is kept behind it, not in front:
+	-- an authored Model lives only in the place file, so letting one win
+	-- silently would reintroduce the very asset the repository cannot
+	-- reproduce. It still covers any id ModuleGeometry does not know.
+	local built = ModuleGeometry.build(definition, gridRules.cellSize, level, maxLevel)
+	if built then
+		built.Name = `{definition.id}_{x}_{y}`
+		built:PivotTo(pivot)
+		built.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
+		return built
+	end
 
 	local template = templateFor(definition.id)
 	if template then
@@ -389,6 +401,10 @@ StationSceneBuilder.__index = StationSceneBuilder
 
 export type Config = {
 	gridRules: Grid.Rules,
+	-- Handed in rather than read from Balance here: this adapter already takes
+	-- its grid numbers as an argument, and the level ceiling is the same kind of
+	-- number -- it decides when a module gets its max-level aura.
+	maxLevel: number,
 	layoutRules: Layout.Rules,
 	plotsParent: Instance, -- workspace.Plots
 	stationsParent: Instance, -- workspace.Stations
@@ -525,7 +541,9 @@ function StationSceneBuilder:placeModule(
 		placement.y,
 		placement.rotation,
 		origin,
-		self._config.gridRules
+		self._config.gridRules,
+		placement.level,
+		self._config.maxLevel
 	)
 	model:SetAttribute("ModuleId", definition.id)
 	model:SetAttribute("Level", placement.level)
@@ -558,9 +576,26 @@ end
 function StationSceneBuilder:setModuleLevel(userId: number, x: number, y: number, level: number)
 	local models = self._models[userId]
 	local model = models and models[Grid.key(x, y)]
-	if model then
-		model:SetAttribute("Level", level)
+	if not model then
+		return
 	end
+
+	-- Geometry first, attribute second. The client's spark fires on the
+	-- attribute, and a burst that lands before the new hardware has replicated
+	-- looks like it went off on the old model.
+	local id = model:GetAttribute("ModuleId")
+	local definition = if typeof(id) == "string" then ModuleCatalog.get(id) else nil
+	if definition then
+		ModuleGeometry.restyle(
+			model,
+			definition,
+			self._config.gridRules.cellSize,
+			level,
+			self._config.maxLevel
+		)
+	end
+
+	model:SetAttribute("Level", level)
 end
 
 return StationSceneBuilder
