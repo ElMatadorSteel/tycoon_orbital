@@ -24,23 +24,22 @@ local DEFINITIONS = {
 	RebirthStation = "RemoteFunction",
 	PurchaseRailgun = "RemoteFunction",
 	FireRailgun = "RemoteFunction",
-	-- UnlockResearchMine has no remote of its own: the pad is a walk-onto
-	-- trigger (StationSceneBuilder's researchPadTouched Signal, wired in
-	-- Composition/Bootstrap.luau), same as the legacy LaunchPad, not a
-	-- client-initiated purchase like the Railgun's pad.
-	MineVein = "RemoteFunction",
 	SellOres = "RemoteFunction",
+	-- Pays out immediately, on the same hit -- unlike SellOres above (not
+	-- yet bound to anything; presumably a later ore-inventory feature),
+	-- MineVein does not accumulate an inventory, it mirrors FireRailgun's
+	-- own "claim a hit, get paid now" shape.
+	MineVein = "RemoteFunction",
 	-- Only ever bound server-side when Bootstrap was built in development
 	-- mode (see Container.luau's `development` flag) -- exist as Instances
-	-- either way (Net.luau always creates every remote listed here), they
-	-- just never receive an OnServerInvoke outside Studio, so an
-	-- InvokeServer call against any of these in production simply
-	-- times out/errors.
+	-- either way, they just never receive an OnServerInvoke outside Studio.
 	DevSetPass = "RemoteFunction",
 	DevSetRebirths = "RemoteFunction",
 	DevGiveCredits = "RemoteFunction",
 	DevSetUnlimitedMoney = "RemoteFunction",
 	DevResetAll = "RemoteFunction",
+	DevGiveOres = "RemoteFunction",
+	DevSetWalkSpeed = "RemoteFunction",
 
 	-- server -> client, one-off notifications -- the transport behind
 	-- Ports.Notifier (a "+150" gain popup, a completed-objective banner).

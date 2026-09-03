@@ -44,6 +44,17 @@ local Balance = {
 	-- Composition/Container.luau's flag), no bearing on real balance.
 	Dev = {
 		UnlimitedMoneyCeiling = 999999999, -- what DevSetUnlimitedMoney tops credits up to
+		-- What DevSetWalkSpeed may command. Default is the Roblox stock
+		-- WalkSpeed, so "reset" means exactly "as if nobody had touched it".
+		-- Max is a tunnelling ceiling, not a taste call: past roughly this
+		-- speed a character covers more ground between two frames than a thin
+		-- wall is deep, and walks straight through it (ARCHITECTURE.md's
+		-- "tunnelling is a physics problem"). Raise it knowingly.
+		WalkSpeed = {
+			Default = 16,
+			Min = 8,
+			Max = 200,
+		},
 	},
 
 	Save = {
@@ -122,6 +133,14 @@ local Balance = {
 			-- next goal rather than as scenery.
 			Cost = 2500,
 		},
+		Shovel = {
+			-- Well under the mine that contains it. Its pad stands INSIDE the
+			-- zone you already paid 2500 to open, so it reads as the second
+			-- half of one purchase rather than as a second gate of the same
+			-- size -- and a player who walked all the way to the pit floor
+			-- should not have to walk back out and grind again.
+			Cost = 900,
+		},
 		Vein = {
 			-- Slower than the Railgun's 1.5s: a vein is a fixture you return
 			-- to again and again rather than a target that flies past, so the
@@ -177,6 +196,74 @@ local Balance = {
 				minReward = 900,
 				maxReward = 1500,
 			},
+		},
+	},
+
+	-- Presentation timings, read only by the client. Here rather than inline in
+	-- the controller because no magic number lives outside the configuration
+	-- (DEVELOPMENT.md) -- and because these are exactly the numbers someone will
+	-- want to retune after watching the effect once.
+	Vfx = {
+		TeleportAura = {
+			-- EmbarkStation publishes Location BEFORE calling the teleporter, so
+			-- the attribute reaches the client a beat before the character has
+			-- actually been moved. Without this pause the aura flashes once in
+			-- the lobby before following the player to their station.
+			ArrivalDelay = 0.2,
+			-- How long the aura keeps emitting once the player has landed.
+			Hold = 2.5,
+			-- Lights dim over this long instead of cutting out, which reads as a
+			-- despawn rather than as a bug.
+			Fade = 1,
+			-- Particles already in flight have to finish their life before the
+			-- clone is destroyed, or they vanish mid-air. The longest emitter in
+			-- effet_tp_vfx lives 3 seconds.
+			Linger = 3,
+			-- Studs below the HumanoidRootPart centre: an R15 root sits about
+			-- three studs above the floor, and the disc belongs on the floor.
+			Offset = 3,
+		},
+
+		-- The burst when a module gains a level. Short and loud: it has to be
+		-- seen from wherever the player was standing when they pressed the
+		-- button, and gone before it becomes scenery.
+		Upgrade = {
+			SparkCount = 34,
+			SparkLifetime = 0.9,
+			SparkSpeed = 22,
+			SparkSize = 1.1,
+			SparkSpread = 55, -- degrees the cone opens to
+			-- Emitters are told to stop, then the holder is destroyed one
+			-- lifetime later: destroying it immediately would cut the sparks
+			-- already in flight out of the air.
+			Linger = 1.2,
+			-- Studs above the module's base that the burst starts from. Bursting
+			-- at ground level buries half the sparks in the hull.
+			Height = 2.5,
+
+			-- Plain {R,G,B} rather than Color3: this module has to stay loadable
+			-- under Lune, where Roblox datatypes do not exist -- same reason
+			-- Lobby.Center is written this way.
+			--
+			-- Read by the server's ModuleGeometry for the max-level aura and by
+			-- the client's EffectsController for the burst. One source, so the
+			-- aura and the spark that announces it cannot drift apart.
+			SparkColor = { R = 255, G = 196, B = 74 },
+			-- Saturated rather than pale: Neon blooms toward white, and the
+			-- first pass at (120,255,156) read as a white glow with no colour
+			-- left in it at all.
+			AuraColor = { R = 40, G = 220, B = 96 },
+
+			-- Whether a module at (or one level below) its ceiling wears the
+			-- green aura -- the ground ring, the halo over the roof, the corner
+			-- beads and the point light that go with them.
+			--
+			-- Off. On a plot dense with topped-out modules the station read as a
+			-- field of green rather than as machinery, and the aura was doing
+			-- the level pips' job louder and less precisely. The geometry that
+			-- draws it is untouched in ModuleGeometry: flip this back to true
+			-- and it returns exactly as it was.
+			MaxAura = false,
 		},
 	},
 }

@@ -62,12 +62,43 @@ local SPACE = Theme.Space
 
 -- Height set for 3 rows of cards: 3 x 160 + 2 x 12 = 504 px. The whole
 -- catalogue fits without scrolling.
-local PANEL = Vector2.new(840, 640)
-local RAIL_WIDTH = 176
-local CARD = Vector2.new(134, 160)
+-- Sized so the whole catalogue fits WITHOUT SCROLLING: 10 modules, five to a
+-- row, two rows. The scrollbar that used to sit over the last card is gone
+-- because there is nothing left to scroll.
+--
+-- The width came free. The old window spent 176px -- 21% of itself -- on a
+-- vertical column of seven category pills that a player touches once a
+-- session. Those are a horizontal bar now, and the grid got the space.
+local PANEL = Vector2.new(880, 580)
+local CARD = Vector2.new(150, 178)
 local TITLE_HEIGHT = 44
+local TITLE_ICON = 44
+local SUBTITLE_HEIGHT = 24
+-- The "?" pill in a card's top row, sitting beside the name band.
+local INFO_BADGE = 24
+local TAB_HEIGHT = 44
+-- The confirmation dialog's header tile.
+local CONFIRM_ICON = 40
 local ICON = Theme.Icon.button
-local ICON_TOTAL = ICON + 20
+-- The caption lives ON the tile now (see Theme.iconButton), so a button's
+-- footprint is just the tile -- no strip underneath to account for.
+local ICON_TOTAL = ICON
+
+-- Tiles per row in the right-hand dock.
+local DOCK_COLUMNS = 2
+
+-- Pixels of the bottom-left corner already spoken for by HudController's
+-- read-out cluster. The left dock sits on the same edge, so it is anchored
+-- clear of this rather than centred: a Renaissance caption landing on the
+-- module count is the one collision splitting the buttons can create.
+--
+-- A reserve rather than a query: the two views are built independently, and a
+-- dock that measured the HUD would have to be rebuilt every time a read-out
+-- appeared or vanished.
+-- Measured, not guessed: the cluster runs 272px from the bottom edge up to the
+-- module count, and a caption sits under each dock button. 340 clears both with
+-- room to spare -- at 300 the "Renaissance" caption landed on "0 module".
+local HUD_RESERVE = 340
 
 local ALL = "Tous"
 
@@ -102,23 +133,89 @@ local function statLine(definition: ModuleCatalog.ModuleDef): string
 	return table.concat(parts, "  ")
 end
 
+-- A card is THREE BANDS, the way the reference art builds one: a name strip
+-- across the top, the artwork in the middle, a price strip across the bottom.
+--
+-- Bands rather than free-floating labels, because a band has edges. Every
+-- element used to be positioned against the card itself and drifted into its
+-- neighbours -- the name ran under the "?" badge, the price pill hung off the
+-- bottom edge. Here each row owns a horizontal slice and cannot leave it.
+--
+-- The rows, top to bottom (card is 178 tall):
+--   6..34    name band, and the "?" badge BESIDE it -- same row, not on top
+--   38..116  artwork, centred in what is left
+--   118..134 the stat line
+--   144..172 price band
+local CARD_PAD = 6
+local CARD_BAND = 28
+local CARD_ART_TOP = 38
+local CARD_ART_HEIGHT = 78
+local CARD_STAT_TOP = 118
+
 local function buildCard(definition: ModuleCatalog.ModuleDef)
-	local nameLabel = Theme.body({
-		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, SPACE.sm),
-		Size = UDim2.new(1, -SPACE.md, 0, 34),
+	local color = ModuleVisuals.colorOf(definition.id) or COLORS.Card
+
+	----------------------------------------------------------------------
+	-- Top row: name band + info badge, side by side
+
+	local nameLabel = Theme.new("TextLabel", {
+		Name = "Name",
+		Size = UDim2.new(1, -SPACE.sm, 1, 0),
+		Position = UDim2.fromOffset(SPACE.xs, 0),
+		BackgroundTransparency = 1,
+		Font = Theme.Font.Display,
 		TextSize = Theme.TextSize.small,
-		TextWrapped = true,
+		TextColor3 = COLORS.Text,
+		-- Scaled, so a long name shrinks instead of running out of its band.
+		TextScaled = true,
+		TextWrapped = false,
 		Text = definition.name,
+	}, {
+		Theme.textStroke(Theme.Line.base),
+		Theme.new("UITextSizeConstraint", {
+			MaxTextSize = Theme.TextSize.small,
+			MinTextSize = 8,
+		}),
 	})
 
-	local children = { nameLabel }
+	local nameBand = Theme.new("Frame", {
+		Name = "NameBand",
+		Position = UDim2.fromOffset(CARD_PAD, CARD_PAD),
+		-- Stops exactly where the badge begins. The two share the row and the
+		-- arithmetic here is what guarantees they never touch.
+		Size = UDim2.new(1, -(CARD_PAD * 2 + INFO_BADGE + SPACE.xs), 0, CARD_BAND),
+		BackgroundColor3 = Theme.darken(color, 0.34),
+	}, { Theme.corner(Theme.Radius.sm), Theme.stroke(nil, Theme.Line.thin), nameLabel })
+
+	local infoButton = Theme.new("TextButton", {
+		Name = "Info",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -CARD_PAD, 0, CARD_PAD),
+		Size = UDim2.fromOffset(INFO_BADGE, CARD_BAND),
+		BackgroundColor3 = COLORS.Accent,
+		AutoButtonColor = false,
+		Font = Theme.Font.Display,
+		TextSize = Theme.TextSize.small,
+		TextColor3 = Color3.new(1, 1, 1),
+		Text = "?",
+		ZIndex = 2,
+	}, {
+		Theme.corner(Theme.Radius.sm),
+		Theme.stroke(nil, Theme.Line.thin),
+		Theme.textStroke(Theme.Line.thin),
+	})
+
+	local children = { nameBand, infoButton }
+
+	----------------------------------------------------------------------
+	-- Middle: the artwork, centred in its slice
 
 	-- Show the object itself rather than a generic icon: the player
 	-- recognizes what they're about to place. Built at level 1 -- a card is
 	-- what BUYING the module looks like, never an upgraded look nobody has
 	-- paid for. The icon pack stays the fallback, for a module without a
 	-- model yet.
+	local artCentre = CARD_ART_TOP + CARD_ART_HEIGHT / 2
 	local built = ModuleGeometry.build(definition, THUMB_CELL_SIZE, 1, THUMB_MAX_LEVEL)
 	local legacyTemplate = if not built and ModuleModels
 		then ModuleModels:FindFirstChild(definition.id)
@@ -129,9 +226,9 @@ local function buildCard(definition: ModuleCatalog.ModuleDef)
 		table.insert(
 			children,
 			Theme.modelThumb(template, {
-				AnchorPoint = Vector2.new(0.5, 0),
-				Position = UDim2.new(0.5, 0, 0, 40),
-				Size = UDim2.fromOffset(68, 64),
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.new(0.5, 0, 0, artCentre),
+				Size = UDim2.fromOffset(84, 74),
 			})
 		)
 		-- modelThumb clones the model in; the source built here has nothing
@@ -145,9 +242,9 @@ local function buildCard(definition: ModuleCatalog.ModuleDef)
 			table.insert(
 				children,
 				image(iconId, {
-					AnchorPoint = Vector2.new(0.5, 0),
-					Position = UDim2.new(0.5, 0, 0, 44),
-					Size = UDim2.fromOffset(56, 56),
+					AnchorPoint = Vector2.new(0.5, 0.5),
+					Position = UDim2.new(0.5, 0, 0, artCentre),
+					Size = UDim2.fromOffset(64, 64),
 				})
 			)
 		end
@@ -155,65 +252,65 @@ local function buildCard(definition: ModuleCatalog.ModuleDef)
 
 	table.insert(
 		children,
-		Theme.body({
-			AnchorPoint = Vector2.new(0.5, 0),
-			Position = UDim2.new(0.5, 0, 0, 104),
-			Size = UDim2.new(1, -SPACE.sm, 0, 16),
+		Theme.new("TextLabel", {
+			Name = "Stats",
+			Position = UDim2.fromOffset(CARD_PAD, CARD_STAT_TOP),
+			Size = UDim2.new(1, -CARD_PAD * 2, 0, 16),
+			BackgroundTransparency = 1,
+			Font = Theme.Font.Display,
 			TextSize = Theme.TextSize.caption,
+			TextColor3 = Theme.lighten(color, 0.7),
 			Text = statLine(definition),
-		})
+		}, { Theme.textStroke(Theme.Line.thin) })
 	)
 
-	local costLabel = Theme.body({
-		Position = UDim2.fromOffset(26, 0),
-		Size = UDim2.new(1, -30, 1, 0),
+	----------------------------------------------------------------------
+	-- Bottom row: the price band
+	--
+	-- Coin and figure are laid out by a centred UIListLayout rather than
+	-- placed by hand: the pair stays centred whatever the number's width,
+	-- which a fixed offset cannot do between "25" and "1200".
+
+	local costLabel = Theme.new("TextLabel", {
+		Name = "Cost",
+		LayoutOrder = 2,
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.fromOffset(0, CARD_BAND),
+		BackgroundTransparency = 1,
+		Font = Theme.Font.Display,
 		TextSize = Theme.TextSize.small,
 		TextColor3 = COLORS.Credit,
-		TextXAlignment = Enum.TextXAlignment.Left,
 		Text = tostring(definition.cost),
-	})
+	}, { Theme.textStroke(Theme.Line.base) })
 
 	table.insert(
 		children,
 		Theme.new("Frame", {
+			Name = "CostBand",
 			AnchorPoint = Vector2.new(0.5, 1),
-			Position = UDim2.new(0.5, 0, 1, -SPACE.sm),
-			Size = UDim2.fromOffset(94, 26),
-			BackgroundColor3 = COLORS.Scrim,
+			Position = UDim2.new(0.5, 0, 1, -CARD_PAD),
+			Size = UDim2.new(1, -CARD_PAD * 2, 0, CARD_BAND),
+			BackgroundColor3 = Theme.darken(color, 0.5),
 		}, {
-			Theme.corner(13),
+			Theme.corner(Theme.Radius.sm),
 			Theme.stroke(nil, Theme.Line.thin),
+			Theme.new("UIListLayout", {
+				FillDirection = Enum.FillDirection.Horizontal,
+				SortOrder = Enum.SortOrder.LayoutOrder,
+				Padding = UDim.new(0, SPACE.xs),
+				HorizontalAlignment = Enum.HorizontalAlignment.Center,
+				VerticalAlignment = Enum.VerticalAlignment.Center,
+			}),
 			image(Icons.Cash["CashIcon"], {
-				AnchorPoint = Vector2.new(0, 0.5),
-				Position = UDim2.new(0, 5, 0.5, 0),
+				LayoutOrder = 1,
 				Size = UDim2.fromOffset(18, 18),
 			}),
 			costLabel,
 		})
 	)
 
-	-- The classic "?" badge: what a module actually does, one tap away.
-	-- A separate top-layer TextButton, not part of the card's own Face --
-	-- Activated only ever fires on the topmost object under the pointer, so
-	-- tapping it can never also select the card underneath.
-	local infoButton = Theme.new("TextButton", {
-		Name = "Info",
-		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -4, 0, 4),
-		Size = UDim2.fromOffset(22, 22),
-		BackgroundColor3 = COLORS.Accent,
-		AutoButtonColor = false,
-		Font = Theme.Font.Display,
-		TextSize = 14,
-		TextColor3 = Color3.new(1, 1, 1),
-		Text = "?",
-		ZIndex = 2,
-	}, { Theme.corner(11), Theme.stroke(nil, Theme.Line.thin) })
-	table.insert(children, infoButton)
-
 	-- The card takes the module's color: this is what makes the grid
 	-- readable at a glance, same as the reference art.
-	local color = ModuleVisuals.colorOf(definition.id) or COLORS.Card
 	local card = Theme.chunky({
 		Name = definition.id,
 		Size = UDim2.fromOffset(CARD.X, CARD.Y),
@@ -236,8 +333,8 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 	self.onToggleModify = nil :: (() -> ())?
 	self.onOpenChanged = nil :: ((boolean) -> ())?
 	self.onReturnToLobby = nil :: (() -> ())?
-	self.onRebirthRequested = nil :: (() -> ())? -- the dock button was clicked, before any confirm
-	self.onUltimateRequested = nil :: (() -> ())? -- ditto, for the Ultimate button
+	self.onRebirthRequested = nil :: (() -> ())?
+	self.onResearchRequested = nil :: (() -> ())?
 
 	self._entries = {} :: { [string]: any }
 	self._selected = nil :: string?
@@ -246,13 +343,54 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 	self._open = false
 
 	----------------------------------------------------------------------
-	-- Button cluster docked to the right edge
+	-- Two docks, split by what the buttons DO -- not by how many fit.
+	--
+	-- Right: the four verbs that act on the station. Build, upgrade, move,
+	-- demolish are one mode -- a player runs through them in sequence, and they
+	-- belong in one toolbar, on the edge the build window itself opens from.
+	--
+	-- Left: the two that take you OUT of that loop. Neither is ever pressed
+	-- mid-build, and both are consequential -- Renaissance wipes the station.
+	-- Sitting one slot under Démolir, it was a mis-tap away from the button a
+	-- player hits most; on the far edge it cannot be reached by accident.
+	--
+	-- Splitting also halves the column: six 96px buttons ran 616px down the
+	-- screen, taller than most viewports, and the stack was the interface.
+	--
+	-- The left dock hangs off the bottom edge, lifted by HUD_RESERVE so it
+	-- stacks ABOVE the read-out cluster instead of over it.
 
+	-- Laid out as a GRID, two tiles wide, the way the reference does it. A
+	-- single column of big tiles is a stripe down the edge of the screen and
+	-- reads as a ruler; two columns read as a pad, and halve the distance the
+	-- thumb travels between the first button and the last.
 	self._dock = Theme.new("Frame", {
 		Name = "Dock",
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.new(1, -SPACE.xl, 0.5, 0),
-		Size = UDim2.fromOffset(ICON, ICON_TOTAL * 7 + SPACE.sm * 6),
+		Size = UDim2.fromOffset(
+			DOCK_COLUMNS * ICON_TOTAL + (DOCK_COLUMNS - 1) * SPACE.sm,
+			ICON_TOTAL * 2 + SPACE.sm
+		),
+		BackgroundTransparency = 1,
+		Parent = parent,
+	}, {
+		Theme.new("UIGridLayout", {
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			CellSize = UDim2.fromOffset(ICON, ICON),
+			CellPadding = UDim2.fromOffset(SPACE.sm, SPACE.sm),
+			-- Right, so a dock that does not fill its last row stays flush
+			-- against the screen edge instead of drifting inwards.
+			HorizontalAlignment = Enum.HorizontalAlignment.Right,
+			FillDirectionMaxCells = DOCK_COLUMNS,
+		}),
+	})
+
+	self._dockLeft = Theme.new("Frame", {
+		Name = "DockLeft",
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.new(0, SPACE.xl, 1, -HUD_RESERVE),
+		Size = UDim2.fromOffset(ICON, ICON_TOTAL * 3 + SPACE.sm * 2),
 		BackgroundTransparency = 1,
 		Parent = parent,
 	}, {
@@ -301,51 +439,59 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 	})
 	self._demolishButton.Root.Parent = self._dock
 
+	-- Bare, like the rebirth button beside it: the two controls that take you
+	-- OUT of the build loop share a look, and it is deliberately not the look
+	-- of the tiles that act ON the station. A house needs no label.
 	self._lobbyButton = Theme.iconButton({
 		Name = "Lobby",
-		LayoutOrder = 5,
+		LayoutOrder = 1,
 		Color = FUNCTION.Lobby,
 		Image = Icons.Misc["House"],
-		Caption = "Lobby",
+		Bare = true,
 	})
-	self._lobbyButton.Root.Parent = self._dock
+	self._lobbyButton.Root.Parent = self._dockLeft
 
-	-- Only ever shown while on the station (SetAvailable), same as the
-	-- rest of the dock -- eligibility itself is NOT precomputed here (no
-	-- client-side core-level tracking exists): clicking always asks the
-	-- server, whose refusal reason (not eligible yet, disabled this zone,
-	-- ...) is shown as an ordinary toast, same pattern as every other action.
+	-- The one BARE control in the interface: no tile, no outline, no shadow --
+	-- the recycle arrows alone, and a small tally of how many rebirths are
+	-- banked. It is not a station verb like the four on the right, and looking
+	-- unlike them is the point: nothing about it should invite a reflex tap.
 	self._rebirthButton = Theme.iconButton({
 		Name = "Renaissance",
-		LayoutOrder = 6,
+		LayoutOrder = 2,
 		Color = FUNCTION.Rebirth,
 		Image = Icons.Arrows["Rebirth"],
-		Caption = "Renaissance",
+		Bare = true,
+		Counter = 0,
 	})
-	self._rebirthButton.Root.Parent = self._dock
+	self._rebirthButton.Root.Parent = self._dockLeft
 
-	-- Hidden once owned (SetUltimateOwned) -- it's a one-time purchase, not
-	-- a repeatable action like everything else in this dock; once bought
-	-- there is nothing left to click, and the HUD already shows it's active.
-	self._ultimateButton = Theme.iconButton({
-		Name = "Ultimate",
-		LayoutOrder = 7,
-		Color = FUNCTION.Ultimate,
-		Image = Icons.Menus["VIP"],
-		Caption = "Ultimate",
+	-- The research zone. Bare like the two above it, because it belongs to
+	-- the same family: controls that take you out of the build loop rather
+	-- than verbs that act on the station. Last in the column -- it is the
+	-- newest and the least urgent of the three, and the order the eye reads
+	-- them in should not change under a player who already knows the dock.
+	self._researchButton = Theme.iconButton({
+		Name = "Recherche",
+		LayoutOrder = 3,
+		Color = FUNCTION.Research,
+		Image = Icons.Gems["GemIcon"],
+		Bare = true,
 	})
-	-- Permanent, not an affordability count like Construire's badge: the
-	-- x1.5 multiplier this button grants, spelled out right on it.
-	self._ultimateButton:SetBadge("x1,5")
-	self._ultimateButton.Root.Parent = self._dock
+	self._researchButton.Root.Parent = self._dockLeft
 
 	----------------------------------------------------------------------
 	-- Scrim
 
+	-- INVISIBLE, but still there: it is the click-catcher that closes the menu
+	-- when you tap outside it, and dropping it would drop that.
+	--
+	-- It used to dim the whole screen to 40%. On a game whose backdrop is
+	-- already near-black space, that darkened the station to nearly nothing
+	-- and read as a rendering fault rather than as a modal veil.
 	self._scrim = Theme.new("TextButton", {
 		Size = UDim2.fromScale(1, 1),
 		BackgroundColor3 = COLORS.Scrim,
-		BackgroundTransparency = 0.4,
+		BackgroundTransparency = 1,
 		AutoButtonColor = false,
 		Text = "",
 		Visible = false,
@@ -356,16 +502,107 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 	----------------------------------------------------------------------
 	-- Window
 
+	-- Header: an icon tile, the title, a rule running out to the close button,
+	-- and an accent line under the whole thing.
+	--
+	-- A title alone floating in the corner is what made this window read as a
+	-- grey box with text on it. The tile gives the window a face, and the rule
+	-- is what turns "some text near the top" into a header BAR -- it draws the
+	-- boundary the content then sits below.
+	local titleIcon = Theme.new("Frame", {
+		Name = "TitleIcon",
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.fromOffset(0, TITLE_HEIGHT / 2),
+		Size = UDim2.fromOffset(TITLE_ICON, TITLE_ICON),
+		BackgroundColor3 = FUNCTION.Build,
+	}, {
+		Theme.corner(Theme.Radius.md),
+		Theme.stroke(nil, Theme.Line.thick),
+		Theme.gradient(FUNCTION.Build, 0.2),
+		image(Icons.Menus["Store"], {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromScale(0.62, 0.62),
+		}),
+	})
+
+	local titleLeft = TITLE_ICON + SPACE.md
+
 	local title = Theme.new("TextLabel", {
 		Name = "Title",
-		Size = UDim2.new(1, -(Theme.Control.md + SPACE.md), 0, TITLE_HEIGHT),
+		Position = UDim2.fromOffset(titleLeft, 0),
+		Size = UDim2.new(1, -(titleLeft + Theme.Control.md + SPACE.md), 0, TITLE_HEIGHT),
 		BackgroundTransparency = 1,
 		Font = Theme.Font.Display,
 		TextSize = Theme.TextSize.display,
 		TextColor3 = COLORS.Text,
 		TextXAlignment = Enum.TextXAlignment.Left,
-		Text = "CONSTRUCTION",
+		Text = Theme.Words.BuildTitle,
 	}, { Theme.textStroke(Theme.Line.base) })
+
+	local rule = Theme.new("Frame", {
+		Name = "Rule",
+		AnchorPoint = Vector2.new(0, 0.5),
+		Size = UDim2.fromOffset(0, Theme.Line.base),
+		BackgroundColor3 = Theme.darken(COLORS.Menu, 0.4),
+	}, { Theme.corner(Theme.Line.base) })
+
+	-- Driven off the rendered width rather than a guessed one: TextBounds is
+	-- the only thing that knows how wide "CONSTRUCTION" actually came out in
+	-- this font at this size, and the rule has to start where the word ends.
+	local function fitRule()
+		local start = titleLeft + title.TextBounds.X + SPACE.md
+		rule.Position = UDim2.fromOffset(start, TITLE_HEIGHT / 2)
+		rule.Size = UDim2.new(1, -(start + Theme.Control.md + SPACE.md), 0, Theme.Line.base)
+	end
+	title:GetPropertyChangedSignal("TextBounds"):Connect(fitRule)
+	fitRule()
+
+	-- CENTRED across the window, like the reference's two lines under its
+	-- header. Left-aligned it read as a third item in the header row; centred
+	-- it reads as the window addressing the player.
+	local subtitle = Theme.new("TextLabel", {
+		Name = "Subtitle",
+		Position = UDim2.fromOffset(0, TITLE_HEIGHT + SPACE.xs),
+		Size = UDim2.new(1, 0, 0, SUBTITLE_HEIGHT),
+		BackgroundTransparency = 1,
+		Font = Theme.Font.Display,
+		TextSize = Theme.TextSize.body,
+		-- Gold, the one colour the window does not otherwise use: it is the
+		-- line that speaks to the player rather than labelling something.
+		TextColor3 = COLORS.Credit,
+		Text = Theme.Words.BuildHint,
+	}, { Theme.textStroke(Theme.Line.base) })
+
+	----------------------------------------------------------------------
+	-- Category bar
+	--
+	-- The list is built HERE, before the window, because the chips share the
+	-- width evenly and that division needs the count.
+
+	local categories = { ALL }
+	for _, name in ModuleCatalog.Categories do
+		table.insert(categories, name)
+	end
+
+	local tabsTop = TITLE_HEIGHT + SPACE.xs + SUBTITLE_HEIGHT + SPACE.md
+	local tabWidth =
+		math.floor((PANEL.X - SPACE.xl * 2 - SPACE.sm * (#categories - 1)) / #categories)
+
+	local tabBar = Theme.new("Frame", {
+		Name = "Tabs",
+		Position = UDim2.fromOffset(0, tabsTop),
+		Size = UDim2.new(1, 0, 0, TAB_HEIGHT),
+		BackgroundTransparency = 1,
+	}, {
+		Theme.new("UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, SPACE.sm),
+			HorizontalAlignment = Enum.HorizontalAlignment.Center,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+		}),
+	})
 
 	self._close = Theme.chunky({
 		AnchorPoint = Vector2.new(1, 0),
@@ -382,19 +619,7 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 		}),
 	})
 
-	local contentTop = TITLE_HEIGHT + SPACE.lg
-
-	local rail = Theme.new("Frame", {
-		Name = "Rail",
-		Position = UDim2.fromOffset(0, contentTop),
-		Size = UDim2.new(0, RAIL_WIDTH, 1, -contentTop),
-		BackgroundTransparency = 1,
-	}, {
-		Theme.new("UIListLayout", {
-			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0, SPACE.sm),
-		}),
-	})
+	local contentTop = tabsTop + TAB_HEIGHT + SPACE.md
 
 	self._grid = Theme.new("ScrollingFrame", {
 		Size = UDim2.fromScale(1, 1),
@@ -413,13 +638,20 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 	})
 
 	-- Cut-in well: it detaches the grid from the window's background.
+	--
+	-- Darkened well past MenuInner, which was so close to the window's own
+	-- purple that the cards looked like they were floating on the body rather
+	-- than sitting in a recess. The reference gets this separation for free
+	-- from its two greens; ours has to be made.
 	local well = Theme.panel({
 		Name = "Well",
-		Position = UDim2.fromOffset(RAIL_WIDTH + SPACE.lg, contentTop),
-		Size = UDim2.new(1, -(RAIL_WIDTH + SPACE.lg), 1, -contentTop),
-		BackgroundColor3 = COLORS.MenuInner,
+		Position = UDim2.fromOffset(0, contentTop),
+		Size = UDim2.new(1, 0, 1, -contentTop),
+		BackgroundColor3 = Theme.Glass.Color,
+		BackgroundTransparency = Theme.Glass.Well,
 		Radius = Theme.Radius.lg,
-	}, { Theme.padding(SPACE.sm + 2), self._grid })
+		StrokeThickness = Theme.Line.thick,
+	}, { Theme.padding(SPACE.md), self._grid })
 
 	self._panelScale = Theme.new("UIScale", { Scale = 1 })
 
@@ -428,35 +660,64 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.fromOffset(PANEL.X, PANEL.Y),
-		BackgroundColor3 = COLORS.Menu,
+		BackgroundColor3 = Theme.Glass.Color,
 		Radius = Theme.Radius.xl,
-		StrokeColor = COLORS.Inner,
-		StrokeThickness = 5,
+		-- Black outline outside, light rim inside, and the body see-through
+		-- between them: see Theme.Glass. The 5px WHITE stroke this used to
+		-- carry is what made the menu look like a sticker peeled off a page.
+		StrokeThickness = Theme.Line.thick,
+		BackgroundTransparency = Theme.Glass.Body,
+		Inner = true,
 		Visible = false,
 		ZIndex = 6,
 		Parent = parent,
-	}, { Theme.padding(SPACE.xl), title, self._close.Root, rail, well, self._panelScale })
+	}, {
+		Theme.padding(SPACE.xl),
+		rule,
+		titleIcon,
+		title,
+		subtitle,
+		self._close.Root,
+		tabBar,
+		well,
+		self._panelScale,
+	})
 
 	----------------------------------------------------------------------
 	-- Category tabs
 
 	self._tabs = {}
 	local tabOrder = 0
-	local categories = { ALL }
-	for _, name in ModuleCatalog.Categories do
-		table.insert(categories, name)
-	end
+
+	-- A chip is icon-left, label filling the rest, and the label is SCALED:
+	-- "Logistique" and "Tous" get the same chip width, and a fixed text size
+	-- would clip one to make the other look right.
+	local ICON_BOX = 22
+	local iconGap = SPACE.sm
 
 	for _, name in categories do
 		tabOrder += 1
 		local iconId = ModuleVisuals.CategoryIcons[name]
+		local labelLeft = if iconId then iconGap + ICON_BOX + SPACE.xs else iconGap
 		local children = {
-			Theme.body({
-				Position = UDim2.fromOffset(46, 0),
-				Size = UDim2.new(1, -54, 1, 0),
+			Theme.new("TextLabel", {
+				Name = "Label",
+				Position = UDim2.fromOffset(labelLeft, 0),
+				Size = UDim2.new(1, -(labelLeft + SPACE.sm), 1, 0),
+				BackgroundTransparency = 1,
+				Font = Theme.Font.Display,
 				TextSize = Theme.TextSize.small,
+				TextColor3 = COLORS.Text,
+				TextScaled = true,
+				TextWrapped = false,
 				TextXAlignment = Enum.TextXAlignment.Left,
 				Text = name,
+			}, {
+				Theme.textStroke(Theme.Line.thin),
+				Theme.new("UITextSizeConstraint", {
+					MaxTextSize = Theme.TextSize.small,
+					MinTextSize = 9,
+				}),
 			}),
 		}
 		if iconId then
@@ -464,21 +725,24 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 				children,
 				image(iconId, {
 					AnchorPoint = Vector2.new(0, 0.5),
-					Position = UDim2.new(0, SPACE.md, 0.5, 0),
-					Size = UDim2.fromOffset(24, 24),
+					Position = UDim2.new(0, iconGap, 0.5, 0),
+					Size = UDim2.fromOffset(ICON_BOX, ICON_BOX),
 				})
 			)
 		end
 
 		local tab = Theme.chunky({
 			Name = name,
-			Size = UDim2.new(1, 0, 0, Theme.Control.md),
-			BackgroundColor3 = COLORS.MenuInner,
+			Size = UDim2.fromOffset(tabWidth, TAB_HEIGHT),
+			-- Lifted off the glass rather than darkened into it: on a near-black
+			-- pane a dark chip disappears, and these are the one control in the
+			-- window a player has to find without looking for it.
+			BackgroundColor3 = Theme.lighten(Theme.Glass.Color, 0.16),
 			Radius = Theme.Radius.md,
 			Inner = true,
 		}, children)
 		tab.Root.LayoutOrder = tabOrder
-		tab.Root.Parent = rail
+		tab.Root.Parent = tabBar
 		self._tabs[name] = tab
 
 		tab.Face.Activated:Connect(function()
@@ -549,7 +813,10 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 	self._active = Theme.panel({
 		Name = "Active",
 		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -SPACE.xl),
+		-- Above the weapon selector, which owns the bottom centre. Everything
+		-- that lands there stacks off Theme.Hotbar.Reserve rather than each
+		-- guessing its own offset.
+		Position = UDim2.new(0.5, 0, 1, -(SPACE.xl + Theme.Hotbar.Reserve)),
 		Size = UDim2.fromOffset(360, 60),
 		BackgroundColor3 = COLORS.PanelDeep,
 		Radius = Theme.Radius.lg,
@@ -604,7 +871,7 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 	self._info = Theme.panel({
 		Name = "Info",
 		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -SPACE.xl),
+		Position = UDim2.new(0.5, 0, 1, -(SPACE.xl + Theme.Hotbar.Reserve)),
 		Size = UDim2.fromOffset(INFO_WIDTH, SPACE.sm + 22 + SPACE.sm),
 		BackgroundColor3 = COLORS.PanelDeep,
 		Radius = Theme.Radius.lg,
@@ -628,6 +895,158 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 	end)
 
 	----------------------------------------------------------------------
+	-- Generic confirmation modal -- for any destructive/irreversible action
+	-- (currently just Rebirth). `confirmColor` tints the confirm button so
+	-- distinct actions sharing this one dialog still read as distinct.
+
+	-- Same header grammar as the build window: a tile, the title beside it,
+	-- and a rule out to the edge. A confirmation that looks like a different
+	-- product from the menu that opened it is how a player stops trusting
+	-- either -- and this is the one dialog that wipes a station.
+	self._confirmIcon = Theme.new("Frame", {
+		Name = "Icon",
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.fromOffset(0, CONFIRM_ICON / 2),
+		Size = UDim2.fromOffset(CONFIRM_ICON, CONFIRM_ICON),
+		BackgroundColor3 = FUNCTION.Rebirth,
+	}, {
+		Theme.corner(Theme.Radius.md),
+		Theme.stroke(nil, Theme.Line.thick),
+		image(Icons.Misc["Exclaim"], {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromScale(0.58, 0.58),
+		}),
+	})
+
+	local confirmLeft = CONFIRM_ICON + SPACE.md
+
+	self._confirmTitle = Theme.new("TextLabel", {
+		Name = "Title",
+		Position = UDim2.fromOffset(confirmLeft, 0),
+		Size = UDim2.new(1, -confirmLeft, 0, CONFIRM_ICON),
+		BackgroundTransparency = 1,
+		Font = Theme.Font.Display,
+		TextSize = Theme.TextSize.title,
+		TextColor3 = COLORS.Text,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Text = "",
+	}, { Theme.textStroke(Theme.Line.base) })
+
+	self._confirmRule = Theme.new("Frame", {
+		Name = "Rule",
+		AnchorPoint = Vector2.new(0, 0.5),
+		Size = UDim2.fromOffset(0, Theme.Line.base),
+		BackgroundColor3 = Theme.darken(COLORS.Menu, 0.4),
+	}, { Theme.corner(Theme.Line.base) })
+
+	local function fitConfirmRule()
+		local start = confirmLeft + self._confirmTitle.TextBounds.X + SPACE.md
+		self._confirmRule.Position = UDim2.fromOffset(start, CONFIRM_ICON / 2)
+		self._confirmRule.Size = UDim2.new(1, -start, 0, Theme.Line.base)
+	end
+	self._confirmTitle:GetPropertyChangedSignal("TextBounds"):Connect(fitConfirmRule)
+
+	self._confirmBody = Theme.prose({
+		Position = UDim2.fromOffset(0, CONFIRM_ICON + SPACE.md),
+		Size = UDim2.fromScale(1, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		Text = "",
+	})
+
+	local confirmCancelLabel = Theme.body({
+		Size = UDim2.fromScale(1, 1),
+		Text = "Annuler",
+	})
+	self._confirmCancel = Theme.chunky({
+		Size = UDim2.fromOffset(150, Theme.Control.md),
+		BackgroundColor3 = COLORS.MenuInner,
+		Radius = Theme.Radius.md,
+		Inner = true,
+	}, { confirmCancelLabel })
+
+	local confirmOkLabel = Theme.body({
+		Size = UDim2.fromScale(1, 1),
+		Text = "Confirmer",
+	})
+	self._confirmOk = Theme.chunky({
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.fromScale(1, 0),
+		Size = UDim2.fromOffset(150, Theme.Control.md),
+		BackgroundColor3 = FUNCTION.Rebirth,
+		Radius = Theme.Radius.md,
+		Inner = true,
+	}, { confirmOkLabel })
+
+	local confirmButtons = Theme.new("Frame", {
+		Name = "Buttons",
+		Position = UDim2.new(0, 0, 1, -Theme.Control.md),
+		Size = UDim2.new(1, 0, 0, Theme.Control.md),
+		BackgroundTransparency = 1,
+	}, { self._confirmCancel.Root, self._confirmOk.Root })
+
+	self._confirmScale = Theme.new("UIScale", { Scale = 1 })
+
+	self._confirm = Theme.panel({
+		Name = "Confirm",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(440, 40 + 90 + SPACE.lg + Theme.Control.md),
+		-- Same glass as the build window: the two are the same product.
+		BackgroundColor3 = Theme.Glass.Color,
+		BackgroundTransparency = Theme.Glass.Body,
+		Radius = Theme.Radius.xl,
+		StrokeThickness = Theme.Line.thick,
+		Inner = true,
+		Visible = false,
+		ZIndex = 9,
+		Parent = parent,
+	}, {
+		Theme.padding(SPACE.xl),
+		self._confirmRule,
+		self._confirmIcon,
+		self._confirmTitle,
+		self._confirmBody,
+		confirmButtons,
+		self._confirmScale,
+	})
+
+	-- Grows with the body text, same AutomaticSize-driven resize _info uses.
+	--
+	-- Every band is named rather than folded into one constant, because the
+	-- old figure counted the window's padding ONCE when Theme.padding applies
+	-- it top AND bottom. The dialog came out 24px short and the last line of
+	-- the body ran under the buttons -- on the one dialog whose small print is
+	-- the whole point of showing it.
+	self._confirmBody:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		self._confirm.Size = UDim2.fromOffset(
+			440,
+			SPACE.xl * 2
+				+ CONFIRM_ICON
+				+ SPACE.md
+				+ self._confirmBody.AbsoluteSize.Y
+				+ SPACE.lg
+				+ Theme.Control.md
+		)
+	end)
+
+	self._confirmCancel.Face.Activated:Connect(function()
+		self._confirm.Visible = false
+		self._confirmCallback = nil
+	end)
+	self._confirmOk.Face.Activated:Connect(function()
+		self._confirm.Visible = false
+		local callback = self._confirmCallback
+		self._confirmCallback = nil
+		if callback then
+			callback()
+		end
+	end)
+
+	----------------------------------------------------------------------
 	-- Ephemeral toast
 
 	self._toastIcon = image(Icons.Misc["Accept"], {
@@ -646,7 +1065,7 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 	self._toast = Theme.panel({
 		Name = "Toast",
 		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -(SPACE.xl + 60 + SPACE.md)),
+		Position = UDim2.new(0.5, 0, 1, -(SPACE.xl + Theme.Hotbar.Reserve + 60 + SPACE.md)),
 		Size = UDim2.fromOffset(440, Theme.Control.md),
 		BackgroundColor3 = COLORS.PanelDeep,
 		Radius = Theme.Radius.lg,
@@ -655,93 +1074,6 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 		ZIndex = 8,
 		Parent = parent,
 	}, { self._toastIcon, self._toastLabel, self._toastScale })
-
-	----------------------------------------------------------------------
-	-- Generic confirmation modal -- shared by Rebirth (destructive: wipes
-	-- the station and credits) and Ultimate (a purchase, real money down
-	-- the line): both always ask first, unlike every toggleable mode above.
-	-- BuildPanel only displays; the title/body wording and what happens on
-	-- confirm are entirely the caller's call, via ShowConfirm below.
-
-	self._confirmTitle = Theme.new("TextLabel", {
-		Name = "Title",
-		Position = UDim2.fromOffset(SPACE.xl, SPACE.xl),
-		Size = UDim2.new(1, -SPACE.xl * 2, 0, 36),
-		BackgroundTransparency = 1,
-		Font = Theme.Font.Display,
-		TextSize = Theme.TextSize.display,
-		TextColor3 = COLORS.Text,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		Text = "",
-	}, { Theme.textStroke(Theme.Line.base) })
-
-	self._confirmBody = Theme.prose({
-		Position = UDim2.fromOffset(SPACE.xl, SPACE.xl + 40),
-		Size = UDim2.new(1, -SPACE.xl * 2, 0, 90),
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextYAlignment = Enum.TextYAlignment.Top,
-		TextWrapped = true,
-		Text = "",
-	})
-
-	local confirmCancel = Theme.chunky({
-		Name = "Cancel",
-		Position = UDim2.new(0, SPACE.xl, 1, -(SPACE.xl + Theme.Control.md)),
-		Size = UDim2.fromOffset(160, Theme.Control.md),
-		BackgroundColor3 = COLORS.MenuInner,
-		Radius = Theme.Radius.md,
-		Inner = true,
-	}, {
-		Theme.body({
-			Size = UDim2.fromScale(1, 1),
-			TextXAlignment = Enum.TextXAlignment.Center,
-			Text = "Annuler",
-		}),
-	})
-
-	self._confirmButton = Theme.chunky({
-		Name = "Confirm",
-		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -SPACE.xl, 1, -(SPACE.xl + Theme.Control.md)),
-		Size = UDim2.fromOffset(220, Theme.Control.md),
-		BackgroundColor3 = FUNCTION.Rebirth,
-		Radius = Theme.Radius.md,
-		Inner = true,
-	}, {
-		Theme.body({
-			Size = UDim2.fromScale(1, 1),
-			TextXAlignment = Enum.TextXAlignment.Center,
-			TextColor3 = Color3.new(1, 1, 1),
-			Text = "Confirmer",
-		}),
-	})
-
-	self._confirm = Theme.panel({
-		Name = "Confirm",
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(480, 220),
-		BackgroundColor3 = COLORS.Menu,
-		Radius = Theme.Radius.xl,
-		StrokeColor = COLORS.Inner,
-		StrokeThickness = 5,
-		Visible = false,
-		ZIndex = 9,
-		Parent = parent,
-	}, { self._confirmTitle, self._confirmBody, confirmCancel.Root, self._confirmButton.Root })
-
-	confirmCancel.Face.Activated:Connect(function()
-		self._confirm.Visible = false
-		self._pendingConfirm = nil
-	end)
-	self._confirmButton.Face.Activated:Connect(function()
-		self._confirm.Visible = false
-		local pending = self._pendingConfirm
-		self._pendingConfirm = nil
-		if pending then
-			pending()
-		end
-	end)
 
 	----------------------------------------------------------------------
 
@@ -759,14 +1091,14 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 			self.onToggleUpgrade()
 		end
 	end)
-	self._modifyButton.Button.Face.Activated:Connect(function()
-		if self.onToggleModify then
-			self.onToggleModify()
-		end
-	end)
 	self._demolishButton.Button.Face.Activated:Connect(function()
 		if self.onToggleDemolish then
 			self.onToggleDemolish()
+		end
+	end)
+	self._modifyButton.Button.Face.Activated:Connect(function()
+		if self.onToggleModify then
+			self.onToggleModify()
 		end
 	end)
 	self._lobbyButton.Button.Face.Activated:Connect(function()
@@ -779,9 +1111,9 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 			self.onRebirthRequested()
 		end
 	end)
-	self._ultimateButton.Button.Face.Activated:Connect(function()
-		if self.onUltimateRequested then
-			self.onUltimateRequested()
+	self._researchButton.Button.Face.Activated:Connect(function()
+		if self.onResearchRequested then
+			self.onResearchRequested()
 		end
 	end)
 
@@ -823,24 +1155,6 @@ function BuildPanel:Close()
 	end
 end
 
--- Generic: title/body wording and what happens on confirm are entirely the
--- caller's call (BuildController) -- this module only displays, per its own
--- header. confirmColor tints the Confirm button, so Rebirth (magenta) and
--- Ultimate (gold) read as visually distinct actions, not the same dialog
--- reused blindly.
-function BuildPanel:ShowConfirm(
-	title: string,
-	body: string,
-	confirmColor: Color3,
-	onConfirm: () -> ()
-)
-	self._confirmTitle.Text = title
-	self._confirmBody.Text = body
-	self._confirmButton:SetColor(confirmColor)
-	self._pendingConfirm = onConfirm
-	self._confirm.Visible = true
-end
-
 -- Toggles the info popup for one module's "?" badge: tapping the same
 -- badge again closes it, tapping a different one just swaps the text.
 function BuildPanel:_showInfo(definition: ModuleCatalog.ModuleDef)
@@ -864,21 +1178,19 @@ function BuildPanel:Toggle()
 end
 
 -- In the lobby the player has no station: none of this makes sense.
+-- How many rebirths are banked, shown on the tally beside the bare button.
+function BuildPanel:SetRebirths(count: number)
+	self._rebirthButton:SetCounter(tostring(count))
+end
+
 function BuildPanel:SetAvailable(available: boolean)
 	self._dock.Visible = available
+	self._dockLeft.Visible = available
 	if not available then
 		self:Close()
 		self._active.Visible = false
 		self._toast.Visible = false
-		self._confirm.Visible = false
-		self._pendingConfirm = nil
 	end
-end
-
--- Hides the Ultimate button once it's owned: nothing left to buy, and the
--- HUD already shows it's active.
-function BuildPanel:SetUltimateOwned(owned: boolean)
-	self._ultimateButton.Root.Visible = not owned
 end
 
 function BuildPanel:SetCategory(name: string)
@@ -953,8 +1265,7 @@ function BuildPanel:SetModifying(active: boolean)
 		self._activeBadge.BackgroundColor3 = FUNCTION.Move
 		self._activeIcon.Image = Icons.Menus["Teleport"]
 		self._activeName.Text = "Modification"
-		self._activeHint.Text =
-			"clic pour saisir/déposer   ·   R pivoter   ·   clic droit annuler"
+		self._activeHint.Text = "clic ramasser/poser   ·   clic droit annuler"
 	else
 		self._activeHint.Text = "R pivoter   ·   clic droit annuler"
 		self._active.Visible = self._selected ~= nil
@@ -980,6 +1291,24 @@ function BuildPanel:SetDemolishing(active: boolean)
 			self:SetSelected(self._selected)
 		end
 	end
+end
+
+function BuildPanel:ShowConfirm(
+	title: string,
+	body: string,
+	confirmColor: Color3,
+	onConfirm: () -> ()
+)
+	self._confirmTitle.Text = title
+	self._confirmBody.Text = body
+	self._confirmOk:SetColor(confirmColor)
+	-- The header tile takes the same colour as the confirm button: the dialog
+	-- announces which action it is about before the title has been read.
+	self._confirmIcon.BackgroundColor3 = confirmColor
+	self._confirmCallback = onConfirm
+	self._confirm.Visible = true
+	self._confirmScale.Scale = 0.85
+	TweenService:Create(self._confirmScale, Theme.Tween.Pop, { Scale = 1 }):Play()
 end
 
 function BuildPanel:Toast(message: string, isError: boolean?)

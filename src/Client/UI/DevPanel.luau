@@ -1,8 +1,7 @@
 --!strict
 -- The dev-mode panel: a small button docked top-right (deliberately away
--- from the build dock, which is an in-game player tool -- this is a testing
--- tool, so it lives somewhere a real player wouldn't stumble onto it even
--- though DevController only ever parents this under RunService:IsStudio()).
+-- from the build dock -- this is a testing tool, only ever parented under
+-- RunService:IsStudio()).
 --
 -- Same rule as BuildPanel: this module only displays. It decides nothing
 -- and never talks to the server -- it tells DevController through its onXxx
@@ -20,7 +19,7 @@ local SPACE = Theme.Space
 local PANEL_WIDTH = 340
 
 -- The build dock (BuildPanel) is anchored to the same right edge, vertically
--- centered, and tall enough with 7 buttons that its topmost one (Construire)
+-- centered, and tall enough with several buttons that its topmost one
 -- already sits close to the very top of the screen -- smaller than any
 -- Theme.Control token and flush against the top edge is what it takes for
 -- this button to clear it without overlapping.
@@ -42,10 +41,7 @@ local function sectionLabel(text: string): TextLabel
 	})
 end
 
--- A small state button that just flips a boolean and re-labels itself --
--- the same "lit or not" pattern BuildPanel's category tabs already use, just
--- with an explicit ON/OFF label instead of a lifted/not-lifted look, since
--- there is no icon here to carry the meaning on its own.
+-- A small state button that just flips a boolean and re-labels itself.
 local function toggleButton(name: string, offText: string, onText: string, initial: boolean)
 	local button = Theme.chunky({
 		Name = name,
@@ -131,6 +127,9 @@ function DevPanel.new(parent: ScreenGui): DevPanel
 	self.onGiveCredits = nil :: ((amount: number) -> ())?
 	self.onSetUnlimitedMoney = nil :: ((enabled: boolean) -> ())?
 	self.onResetAll = nil :: (() -> ())?
+	-- nil speed means "back to normal" -- the default lives in Balance, not
+	-- in this view.
+	self.onSetWalkSpeed = nil :: ((speed: number?) -> ())?
 
 	self._open = false
 
@@ -161,6 +160,20 @@ function DevPanel.new(parent: ScreenGui): DevPanel
 
 	----------------------------------------------------------------------
 	-- Window
+
+	-- First in the list on purpose: it is the control a tester reaches for
+	-- most often, since crossing the map precedes checking anything else.
+	-- No bounds printed here -- they are balance numbers, and the applied
+	-- value echoed back by the server is what teaches the range.
+	local speedLabel = sectionLabel("DÉPLACEMENT")
+	self._speedCurrent = Theme.caption({
+		Size = UDim2.new(1, 0, 0, 16),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Text = "Vitesse : normale",
+	})
+	self._speedBox = textBox("SpeedBox", "Vitesse de marche")
+	local applySpeed = actionButton("ApplySpeed", "Appliquer", COLORS.Valid)
+	local resetSpeed = actionButton("ResetSpeed", "Vitesse normale", COLORS.MenuInner)
 
 	local rebirthsLabel = sectionLabel("RENAISSANCES")
 	self._rebirthsCurrent = Theme.caption({
@@ -208,6 +221,11 @@ function DevPanel.new(parent: ScreenGui): DevPanel
 			SortOrder = Enum.SortOrder.LayoutOrder,
 			Padding = UDim.new(0, SPACE.sm),
 		}),
+		speedLabel,
+		self._speedCurrent,
+		self._speedBox,
+		applySpeed.Root,
+		resetSpeed.Root,
 		rebirthsLabel,
 		self._rebirthsCurrent,
 		self._rebirthsBox,
@@ -273,6 +291,21 @@ function DevPanel.new(parent: ScreenGui): DevPanel
 
 	----------------------------------------------------------------------
 
+	applySpeed.Face.Activated:Connect(function()
+		local speed = tonumber(self._speedBox.Text)
+		if not speed then
+			return
+		end
+		if self.onSetWalkSpeed then
+			self.onSetWalkSpeed(speed)
+		end
+	end)
+	resetSpeed.Face.Activated:Connect(function()
+		if self.onSetWalkSpeed then
+			self.onSetWalkSpeed(nil)
+		end
+	end)
+
 	applyRebirths.Face.Activated:Connect(function()
 		local count = tonumber(self._rebirthsBox.Text)
 		if not count then
@@ -313,9 +346,7 @@ function DevPanel.new(parent: ScreenGui): DevPanel
 	end
 
 	-- Two-step confirm: first click arms it (turns white-on-red text, waits
-	-- 4s), second click while armed actually fires the reset. No separate
-	-- modal for a dev-only tool -- this is enough friction against a stray
-	-- click.
+	-- 4s), second click while armed actually fires the reset.
 	local resetLabelText = resetAllButton.Face:FindFirstChild("Label") :: TextLabel
 	local armed = false
 	local armToken = 0
@@ -391,6 +422,14 @@ end
 
 function DevPanel:SetUnlimitedMoneyEnabled(enabled: boolean)
 	self._unlimitedToggle:set(enabled)
+end
+
+-- Shows the speed the SERVER actually applied, which is not necessarily the
+-- one typed: an out-of-range request comes back clamped, and reading the
+-- clamped value here is what tells the tester it was clamped rather than
+-- ignored.
+function DevPanel:SetWalkSpeed(speed: number)
+	self._speedCurrent.Text = `Vitesse : {speed}`
 end
 
 return DevPanel

@@ -26,6 +26,9 @@ end
 local Balance = require(fromShared("Balance"))
 local ModuleCatalog = require(fromShared("Domain/Station/ModuleCatalog"))
 local Rebirth = require(fromShared("Domain/Rebirth/Rebirth"))
+local ResearchMine = require(fromShared("Domain/Research/ResearchMine"))
+local OreCatalog = require(fromShared("Domain/Research/OreCatalog"))
+local Shovel = require(fromShared("Domain/Research/Shovel"))
 local Container = require("./Container")
 local RemoteBindings = require("./RemoteBindings")
 local SessionRegistry = require("../Application/SessionRegistry")
@@ -39,6 +42,7 @@ local StationSceneBuilder = require("../Adapters/Roblox/StationSceneBuilder")
 local CharacterTeleporter = require("../Adapters/Roblox/CharacterTeleporter")
 local AsteroidFieldRenderer = require("../Adapters/Roblox/AsteroidFieldRenderer")
 local RailgunKioskBuilder = require("../Adapters/Roblox/RailgunKioskBuilder")
+local HumanoidMovementActuator = require("../Adapters/Roblox/HumanoidMovementActuator")
 
 -- Fails fast and loud: a half-wired lobby gives players who fall into the
 -- void, much harder to diagnose than a startup error. Ported from the
@@ -104,6 +108,7 @@ function Bootstrap.start()
 
 	local sceneBuilder = StationSceneBuilder.new({
 		gridRules = gridRules,
+		maxLevel = Balance.Upgrade.MaxLevel,
 		layoutRules = {
 			centerX = Balance.Lobby.Center.X,
 			centerZ = Balance.Lobby.Center.Z,
@@ -115,6 +120,7 @@ function Bootstrap.start()
 		plotsParent = workspace:WaitForChild("Plots"),
 		stationsParent = workspace:WaitForChild("Stations"),
 		researchMineCost = Balance.Research.Mine.Cost,
+		shovelCost = Balance.Research.Shovel.Cost,
 	})
 
 	-- Lobby scene contract -- unchanged from the legacy LobbyService: the
@@ -139,8 +145,7 @@ function Bootstrap.start()
 	})
 
 	-- New content, not hand-authored scenery: created here rather than
-	-- WaitForChild'd, same reasoning as the plot/module geometry above being
-	-- built procedurally instead of requiring a Studio-placed model.
+	-- WaitForChild'd.
 	local asteroidsParent: Instance = workspace:FindFirstChild("Asteroids") :: Instance
 	if not asteroidsParent then
 		local folder = Instance.new("Folder")
@@ -161,6 +166,10 @@ function Bootstrap.start()
 		profileRepository = profileRepository,
 	}):build()
 
+	-- Watches PlayerAdded itself, so it must exist before anyone can join:
+	-- built here rather than lazily on the first dev command.
+	local movementActuator = HumanoidMovementActuator.new()
+
 	local container = Container.new({
 		ports = {
 			profileRepository = profileRepository,
@@ -171,6 +180,7 @@ function Bootstrap.start()
 			sceneBuilder = sceneBuilder,
 			teleporter = teleporter,
 			asteroidField = asteroidField,
+			movementActuator = movementActuator,
 		},
 		sessionRegistry = SessionRegistry.new(),
 		rules = {
@@ -197,6 +207,11 @@ function Bootstrap.start()
 			startingCredits = Balance.Economy.StartingCredits,
 			profileRules = profileRules,
 			unlimitedMoneyCeiling = Balance.Dev.UnlimitedMoneyCeiling,
+			walkSpeed = {
+				default = Balance.Dev.WalkSpeed.Default,
+				min = Balance.Dev.WalkSpeed.Min,
+				max = Balance.Dev.WalkSpeed.Max,
+			},
 			railgun = {
 				cost = Balance.Mining.Railgun.Cost,
 				cooldown = Balance.Mining.Railgun.Cooldown,
@@ -206,6 +221,7 @@ function Bootstrap.start()
 			asteroidTiers = { tiers = Balance.Mining.Tiers },
 			asteroidLifetime = Balance.Mining.Railgun.AsteroidLifetime,
 			researchMine = { cost = Balance.Research.Mine.Cost },
+			shovel = { cost = Balance.Research.Shovel.Cost },
 			vein = { cooldown = Balance.Research.Vein.Cooldown },
 		},
 		development = RunService:IsStudio(),
@@ -219,12 +235,21 @@ function Bootstrap.start()
 		container.useCases.embarkStation:run(player.UserId)
 	end)
 
-	-- The research-mine pad: a walk-onto trigger, same shape as LaunchPad
-	-- above, not a client-initiated purchase -- StationSceneBuilder already
-	-- ownership-checks and debounces the Touched event itself (see its own
-	-- claimPlot), this only ever runs the use case behind it.
+	-- The research pad, and only this, is where the mine is ever bought. The
+	-- pads themselves come and go with the plots, so what is connected here
+	-- is the scene builder's signal rather than any one Instance -- the same
+	-- reason the launch prompt above can be a direct connection and this
+	-- cannot.
 	sceneBuilder.researchPadTouched:Connect(function(userId: number)
 		container.useCases.unlockResearchMine:run(userId)
+	end)
+
+	-- The shovel's pad, down on the rim terrace of the player's own pit. Same
+	-- shape as the one above and for the same reason: the pads come and go
+	-- with the plots, so what is connected here is the signal, never an
+	-- Instance.
+	sceneBuilder.shovelPadTouched:Connect(function(userId: number)
+		container.useCases.unlockShovel:run(userId)
 	end)
 
 	-- We load the character ourselves, once the spawn point is known --
@@ -257,7 +282,21 @@ function Bootstrap.start()
 		)
 		container.ports.statsPublisher:publish(
 			player.UserId,
-			Snapshot.research(profile.unlocked.ResearchMine == true)
+			Snapshot.research(ResearchMine.isUnlocked(profile.unlocked))
+		)
+		-- Every mineral, including the ones held at zero. The exchange panel
+		-- lists the whole catalogue and reads each line off its attribute;
+		-- publishing only what the player holds would leave the rest showing
+		-- nil until their first sale.
+		for _, ore in OreCatalog.Ores do
+			container.ports.statsPublisher:publish(
+				player.UserId,
+				Snapshot.ore(ore.id, profile.ores[ore.id] or 0)
+			)
+		end
+		container.ports.statsPublisher:publish(
+			player.UserId,
+			Snapshot.shovel(Shovel.isUnlocked(profile.unlocked))
 		)
 
 		container.useCases.returnToLobby:run(player.UserId)
@@ -280,6 +319,7 @@ function Bootstrap.start()
 		stationRepository:release(userId)
 		sceneBuilder:releasePlot(userId)
 		container.sessionRegistry:release(userId)
+		movementActuator:release(userId)
 	end)
 
 	-- The recurring simulation tick -- ported from ProductionService:Start's
@@ -302,11 +342,8 @@ function Bootstrap.start()
 	end)
 
 	-- The mining side-feature's own tick loop -- separate cadence from the
-	-- production loop above (Balance.Mining.Railgun.TickRate, independently
-	-- tunable) since spawning/expiring asteroids has nothing to do with the
-	-- power/heat/resource simulation. RunMiningTick itself no-ops for anyone
-	-- without a Railgun, so this is cheap for every player who hasn't bought
-	-- one.
+	-- production loop above. RunMiningTick itself no-ops for anyone without
+	-- a Railgun.
 	task.spawn(function()
 		while true do
 			task.wait(Balance.Mining.Railgun.TickRate)

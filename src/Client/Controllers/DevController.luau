@@ -68,6 +68,15 @@ function DevController:Start()
 	panel.onResetAll = function()
 		Net.DevResetAll:InvokeServer()
 	end
+	-- The only dev remote whose RESULT is read back: the server clamps the
+	-- requested speed, so what it returns is what actually applies, and the
+	-- panel shows that rather than what was typed.
+	panel.onSetWalkSpeed = function(speed: number?)
+		local ok, applied = Net.DevSetWalkSpeed:InvokeServer(speed)
+		if ok then
+			panel:SetWalkSpeed(applied :: number)
+		end
+	end
 
 	State.Changed:Connect(function(key: string, value: any)
 		if key == "Rebirths" then

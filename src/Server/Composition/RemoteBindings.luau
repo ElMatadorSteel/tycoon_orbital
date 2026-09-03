@@ -85,13 +85,16 @@ function RemoteBindings.bind(container: any)
 		return respond(container.useCases.mineVein:run(player.UserId, veinId))
 	end
 
+	-- oreId is optional -- nil sells the whole bag. Passed straight through
+	-- rather than defaulted here: SellOres type-checks it itself, which is
+	-- where that check belongs when the caller may not be our client.
 	Net.SellOres.OnServerInvoke = function(player: Player, oreId: string?)
 		return respond(container.useCases.sellOres:run(player.UserId, oreId))
 	end
 
-	-- Only bound when Container was built in development mode -- see its
-	-- own header. A client InvokeServer against any of these in production
-	-- hits an Instance with no OnServerInvoke callback set, which errors out
+	-- Only bound when Container was built in development mode -- see its own
+	-- header. A client InvokeServer against any of these in production hits
+	-- an Instance with no OnServerInvoke callback set, which errors out
 	-- rather than doing anything.
 	if container.useCases.devSetPass then
 		Net.DevSetPass.OnServerInvoke = function(player: Player, passId: string, enabled: boolean)
@@ -119,9 +122,22 @@ function RemoteBindings.bind(container: any)
 			return respond(container.useCases.devResetAll:run(player.UserId))
 		end
 	end
+	if container.useCases.devGiveOres then
+		Net.DevGiveOres.OnServerInvoke = function(player: Player, oreId: string?, amount: number?)
+			return respond(container.useCases.devGiveOres:run(player.UserId, oreId, amount))
+		end
+	end
+	-- speed is optional -- nil means "back to the default walking speed",
+	-- which is what the panel's reset button sends. Passed straight through:
+	-- DevSetWalkSpeed type-checks and clamps it itself.
+	if container.useCases.devSetWalkSpeed then
+		Net.DevSetWalkSpeed.OnServerInvoke = function(player: Player, speed: number?)
+			return respond(container.useCases.devSetWalkSpeed:run(player.UserId, speed))
+		end
+	end
 	-- addCredits is an ordinary, always-wired use case (not dev-only on its
 	-- own) -- only the REMOTE that lets a client trigger it arbitrarily is
-	-- gated to development mode; nothing else has ever called it before now.
+	-- gated to development mode.
 	if container.development then
 		Net.DevGiveCredits.OnServerInvoke = function(player: Player, amount: number)
 			if typeof(amount) ~= "number" or amount ~= amount then

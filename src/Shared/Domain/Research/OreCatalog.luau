@@ -114,6 +114,26 @@ function OreCatalog.get(id: string): Ore?
 	return nil
 end
 
+-- What a bag of ore is worth, in credits. The rule the exchange runs on, so
+-- it lives here rather than in the use case that spends it: pricing is a
+-- decision about the game, and a decision in a use case is a decision no spec
+-- can reach.
+--
+-- An id the catalogue no longer carries is worth nothing rather than an
+-- error: a save can outlive an ore (see Profile.sanitize's note), and a
+-- player holding a retired mineral should still be able to sell the rest of
+-- their bag.
+function OreCatalog.appraise(bag: { [string]: number }): number
+	local total = 0
+	for id, count in bag do
+		local ore = OreCatalog.get(id)
+		if ore and count > 0 then
+			total += ore.value * count
+		end
+	end
+	return total
+end
+
 function OreCatalog.atDepth(depth: number): { Ore }
 	local result = {}
 	for _, ore in ORES do

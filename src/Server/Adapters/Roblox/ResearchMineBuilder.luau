@@ -123,6 +123,11 @@ local STAIR_ANGLE = math.pi
 -- research post sits at 90; these four avoid both.
 local VEIN_ANGLES = { 30, 115, 215, 305 }
 
+-- Where the shovel pad stands on the rim terrace. Clear of the stairs (180),
+-- the research post (90) and every vein angle above, with the widest gap it
+-- can get from all of them.
+local SHOVEL_ANGLE = 145
+
 local PALETTE = {
 	Rock = Color3.fromRGB(84, 78, 74),
 	RockDark = Color3.fromRGB(61, 57, 55),
@@ -182,29 +187,41 @@ local function money(amount: number): string
 	return grouped .. " \u{00A2}"
 end
 
--- `height` is how far above the adornee the sign floats. It is a parameter
+-- `height` is how far above `host`'s CENTRE the sign floats. A parameter
 -- rather than a constant because one of these hangs over a machine 19 studs
 -- tall: a fixed offset put the text inside the drill.
-local function label(
-	adornee: BasePart,
-	title: string,
-	subtitle: string,
-	height: number?
-): BillboardGui
+--
+-- The sign hangs from an ANCHOR of its own, placed at the exact spot the text
+-- belongs, with no offset left to apply. StudsOffsetWorldSpace did NOT put
+-- the text where the arithmetic said it would on the drill's plinth -- that
+-- adornee is a cylinder turned 90 degrees, and the sign came out beside and
+-- below the machine rather than above it, even with the property reading the
+-- right number. An invisible axis-aligned anchor has no such question to
+-- answer: the sign is where the anchor is, and the anchor's position is one
+-- number anyone can check.
+local function label(host: BasePart, title: string, subtitle: string, height: number?): BillboardGui
+	local anchor = Instance.new("Part")
+	anchor.Name = "SignAnchor"
+	anchor.Size = Vector3.new(0.2, 0.2, 0.2)
+	anchor.Transparency = 1
+	anchor.Anchored = true
+	anchor.CanCollide = false
+	anchor.CanQuery = false
+	anchor.CanTouch = false
+	anchor.CastShadow = false
+	anchor.CFrame = CFrame.new(host.Position + Vector3.new(0, height or 5, 0))
+	anchor.Parent = host
+
 	local gui = Instance.new("BillboardGui")
 	gui.Name = "Sign"
 	gui.Size = UDim2.fromScale(11, 3.2)
-	gui.StudsOffsetWorldSpace = Vector3.new(0, height or 5, 0)
 	-- Depth-tested, not drawn over everything: these hang inside a pit, and a
 	-- sign that shows through 40 studs of rock stops reading as a sign on a
 	-- machine and starts reading as a HUD element.
 	gui.AlwaysOnTop = false
 	gui.MaxDistance = 420
-	gui.Parent = adornee
-	-- Stated rather than left to the Parent fallback: the offset above is
-	-- measured from the Adornee, and which part that is should not be a
-	-- consequence of where the Gui happens to be parented.
-	gui.Adornee = adornee
+	gui.Parent = anchor
+	gui.Adornee = anchor
 
 	local heading = Instance.new("TextLabel")
 	heading.Name = "Title"
@@ -280,7 +297,51 @@ end
 export type PadHandle = {
 	pad: BasePart,
 	sign: BillboardGui,
+	-- What the sign says once it has been paid for. Carried on the handle so
+	-- markUnlocked does not have to know which pad it was handed.
+	openText: string,
 }
+
+-- The tile itself, shared by both pads: the neon square, its four posts, its
+-- light and its sign. Extracted when the shovel got a pad of its own -- two
+-- copies of this would drift the first time either is restyled.
+--
+-- `centre` is the world CFrame of the pad's middle; everything else hangs off
+-- it, so a caller only has to know where the pad goes, not how one is built.
+local function padTile(
+	parent: Instance,
+	name: string,
+	centre: CFrame,
+	title: string,
+	subtitle: string,
+	openText: string
+): PadHandle
+	local pad = part(parent, name, {
+		Size = Vector3.new(PAD_SIZE, 0.6, PAD_SIZE),
+		CFrame = centre,
+		Color = PALETTE.PadLocked,
+		Material = Enum.Material.Neon,
+		CanCollide = true,
+	})
+	pointLight(pad, PALETTE.PadLocked, 18, 1.6)
+
+	-- Four corner posts, so the pad reads as a mechanism rather than as a
+	-- coloured tile someone forgot to delete.
+	for _, dx in { -1, 1 } do
+		for _, dz in { -1, 1 } do
+			part(parent, "PadPost", {
+				Size = Vector3.new(0.8, 3.4, 0.8),
+				CFrame = centre
+					* CFrame.new(dx * (PAD_SIZE / 2 + 0.6), 1.4, dz * (PAD_SIZE / 2 + 0.6)),
+				Color = PALETTE.Structure,
+				Material = Enum.Material.Metal,
+				CanCollide = false,
+			})
+		end
+	end
+
+	return { pad = pad, sign = label(pad, title, subtitle), openText = openText }
+end
 
 local ResearchMineBuilder = {}
 
@@ -295,37 +356,130 @@ function ResearchMineBuilder.buildAccessPad(
 	local half = span / 2
 	buildApproach(parent, origin, half)
 
-	local padZ = half + 2 + LANDING_DEPTH / 2
-	local pad = part(parent, "ResearchMinePad", {
-		Size = Vector3.new(PAD_SIZE, 0.6, PAD_SIZE),
-		CFrame = origin * CFrame.new(0, WALK_Y + 0.3 - SEAT, padZ),
-		Color = PALETTE.PadLocked,
-		Material = Enum.Material.Neon,
-		CanCollide = true,
-	})
-	pointLight(pad, PALETTE.PadLocked, 18, 1.6)
+	return padTile(
+		parent,
+		"ResearchMinePad",
+		origin * CFrame.new(0, WALK_Y + 0.3 - SEAT, half + 2 + LANDING_DEPTH / 2),
+		"ZONE DE RECHERCHE",
+		money(cost),
+		"Ouverte"
+	)
+end
 
-	-- Four corner posts, so the pad reads as a mechanism rather than as a
-	-- coloured tile someone forgot to delete.
-	for _, dx in { -1, 1 } do
-		for _, dz in { -1, 1 } do
-			part(parent, "PadPost", {
-				Size = Vector3.new(0.8, 3.4, 0.8),
-				CFrame = origin * CFrame.new(
-					dx * (PAD_SIZE / 2 + 0.6),
-					WALK_Y + 1.7 - SEAT,
-					padZ + dz * (PAD_SIZE / 2 + 0.6)
-				),
-				Color = PALETTE.Structure,
-				Material = Enum.Material.Metal,
-				CanCollide = false,
-			})
+-- The shovel's pad, INSIDE the mine rather than up on the deck: it is the
+-- tool you dig this pit with, so the place you buy it is the pit. Built with
+-- the zone, so it cannot be stood on before the mine itself is paid for --
+-- which is also why it needs no unlock check of its own to be unreachable.
+function ResearchMineBuilder.buildShovelPad(
+	parent: Instance,
+	origin: CFrame,
+	span: number,
+	cost: number
+): PadHandle
+	local terrace = TERRACES[1]
+	local radius = (terrace.outer + terrace.inner) / 2
+	local angle = math.rad(SHOVEL_ANGLE)
+
+	-- Sunk past the deepest a ring segment's relief can cut, so the tile
+	-- never floats over the rock it sits on (see SEGMENT_RELIEF).
+	local centre = origin
+		* CFrame.new(
+			math.sin(angle) * radius,
+			terrace.top - 0.05,
+			(span / 2 + MINE_DISTANCE) + math.cos(angle) * radius
+		)
+
+	return padTile(parent, "ShovelPad", centre, "PELLE", money(cost), "Achetée")
+end
+
+-- The tool itself. An authored model when one has been placed at
+-- ReplicatedStorage.ResearchModels.Shovel -- same arrangement as the Drill
+-- and the mineral clusters, and the same caveat (see drillTemplate's note:
+-- an authored asset lives only in the place file and cannot be rebuilt from
+-- the repository). The original stick-and-blade below is kept as the
+-- fallback rather than deleted: a shovel is cheap enough to write that a
+-- missing asset should never leave the mine without one.
+function ResearchMineBuilder.buildShovelTool(): Tool
+	local tool = Instance.new("Tool")
+	tool.Name = "Pelle"
+	tool.RequiresHandle = true
+	tool.CanBeDropped = false
+	tool.ToolTip = "Creuser un filon"
+
+	local shovelFolder = if game
+		then (game :: any):GetService("ReplicatedStorage"):FindFirstChild("ResearchModels")
+		else nil
+	local shovelTemplate = shovelFolder and shovelFolder:FindFirstChild("Shovel")
+
+	if
+		shovelTemplate
+		and shovelTemplate:IsA("Model")
+		and shovelTemplate:FindFirstChild("Handle")
+	then
+		local clone = shovelTemplate:Clone()
+		local authored = clone:FindFirstChild("Handle") :: BasePart
+
+		-- Welded while the parts still sit at the offsets the model was
+		-- authored with -- a WeldConstraint freezes the offset its two parts
+		-- have at the moment it is enabled, so welding after moving anything
+		-- would bake in the wrong pose. Massless keeps a 4-stud shovel from
+		-- changing how the character walks.
+		for _, descendant in clone:GetDescendants() do
+			if descendant:IsA("BasePart") then
+				descendant.Anchored = false
+				descendant.CanCollide = false
+				descendant.Massless = true
+				if descendant ~= authored then
+					local joint = Instance.new("WeldConstraint")
+					joint.Part0 = authored
+					joint.Part1 = descendant
+					joint.Parent = authored
+				end
+			end
 		end
+
+		-- A Tool requires its Handle to be a DIRECT child, so the model is
+		-- unwrapped rather than parented whole.
+		for _, child in clone:GetChildren() do
+			child.Parent = tool
+		end
+		clone:Destroy()
+
+		-- Held at the side, shaft upright, blade down by the feet. Found by
+		-- looking at it in a running session rather than derived: the model's
+		-- long axis is its local Y and the blade hangs at -Y, so any rotation
+		-- about X lays the shovel flat like a rifle. A positive Grip.Y lowers
+		-- the tool, since Handle.CFrame = hand * Grip:Inverse().
+		tool.Grip = CFrame.new(0, 0.35, 0) * CFrame.Angles(math.rad(-12), 0, 0)
+		return tool
 	end
 
-	local sign = label(pad, "ZONE DE RECHERCHE", money(cost))
+	local handle = Instance.new("Part")
+	handle.Name = "Handle"
+	handle.Size = Vector3.new(0.4, 4.6, 0.4)
+	handle.Color = Color3.fromRGB(122, 88, 58)
+	handle.Material = Enum.Material.Wood
+	handle.CanCollide = false
+	handle.Parent = tool
 
-	return { pad = pad, sign = sign }
+	local blade = Instance.new("Part")
+	blade.Name = "Blade"
+	blade.Size = Vector3.new(1.9, 2.2, 0.25)
+	blade.Color = PALETTE.Structure
+	blade.Material = Enum.Material.Metal
+	blade.CanCollide = false
+	-- Positioned BEFORE the weld: a WeldConstraint freezes the offset the two
+	-- parts have at the moment it is enabled, so moving one afterwards drags
+	-- the other with it instead of correcting the join.
+	blade.CFrame = handle.CFrame * CFrame.new(0, -2.4, 0)
+	blade.Parent = tool
+
+	local weld = Instance.new("WeldConstraint")
+	weld.Part0 = handle
+	weld.Part1 = blade
+	weld.Parent = handle
+
+	return tool
 end
 
 ----------------------------------------------------------------------
@@ -532,8 +686,8 @@ end
 --
 -- `terrace`/`slot` are what a client's raycast turns back into
 -- OreCatalog.veinId(terrace, slot) -- the network id MineVein validates a
--- claimed hit against. They are stamped alongside the ore's own attributes
--- rather than in place of them: OreId/Hardness/Value/Depth are what a label
+-- claimed hit against. Stamped alongside the ore's own attributes rather
+-- than in place of them: OreId/Rarity/Hardness/Value/Depth are what a label
 -- or an inspector reads, VeinId is what a click sends over the wire.
 local function buildVein(
 	model: Model,
@@ -674,28 +828,6 @@ local function buildResearchPost(model: Model, origin: CFrame, centreZ: number)
 	})
 	pointLight(roof, PALETTE.Trim, 32, 1.6)
 	label(roof, "POSTE DE RECHERCHE", "Analyse des minerais")
-
-	-- Where the whole bag gets sold. A ProximityPrompt, not a Touched
-	-- trigger like the pad above: the pad is something you cross by
-	-- accident on the way to the pit and must be able to refuse silently,
-	-- but selling spends nothing and empties the bag, so it deserves an
-	-- explicit press rather than firing on every footstep. SellOres
-	-- (Net.SellOres, invoked with no id -- sells everything) is entirely
-	-- client-initiated, same shape as the Railgun's own purchase pad.
-	local exchange = part(model, "SellPost", {
-		Size = Vector3.new(4, 0.4, 4),
-		CFrame = base * CFrame.new(0, 0.2, 0),
-		Color = PALETTE.Trim,
-		Material = Enum.Material.Neon,
-		CanCollide = true,
-		CanQuery = true,
-	})
-	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Vendre"
-	prompt.ObjectText = "Minerais"
-	prompt.HoldDuration = 0.3
-	prompt.MaxActivationDistance = 10
-	prompt.Parent = exchange
 end
 
 -- The authored drill, kept in ReplicatedStorage rather than built from code
@@ -750,9 +882,13 @@ local function buildDrillSite(model: Model, origin: CFrame, centreZ: number)
 		drill.ModelStreamingMode = Enum.ModelStreamingMode.Default
 		drill.Parent = model
 
-		-- Clear of the machine's own roofline, so the sign reads against the
-		-- dark of the pit instead of against the rig.
-		signHeight = size.Y + 5
+		-- `target` is where the machine's BASE now sits and `size.Y` is its
+		-- height, so target + size.Y is its roofline. Derived, not measured:
+		-- `box` above was taken BEFORE the seating PivotTo and its centre is
+		-- stale by exactly the correction that followed -- reading it here put
+		-- the sign 27 studs over the drill instead of 5. Translation does not
+		-- change `size`, which is why that half of the reading is still good.
+		signHeight = (target + size.Y + 5) - pad.Position.Y
 		subtitle = "Inactive"
 	else
 		-- Nothing standing here: mark the footprint so the spot still reads as
@@ -863,7 +999,7 @@ function ResearchMineBuilder.markUnlocked(handle: PadHandle)
 	end
 	local detail = handle.sign:FindFirstChild("Detail")
 	if detail and detail:IsA("TextLabel") then
-		detail.Text = "Ouverte"
+		detail.Text = handle.openText
 		detail.TextColor3 = PALETTE.PadOpen
 	end
 end

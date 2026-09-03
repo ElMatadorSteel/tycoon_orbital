@@ -47,6 +47,7 @@ export type RebirthSnapshot = {
 export type MiningSnapshot = { HasRailgun: boolean }
 export type ResearchSnapshot = { HasResearchMine: boolean }
 export type OreSnapshot = { [string]: number }
+export type ShovelSnapshot = { HasShovel: boolean }
 export type ProductionSnapshot = {
 	Sunlight: number,
 	Efficiency: number,
@@ -112,6 +113,10 @@ end
 -- the catalogue instead of keeping a second list in step with this one.
 function Snapshot.ore(oreId: string, count: number): OreSnapshot
 	return { [`Ore{oreId}`] = count }
+end
+
+function Snapshot.shovel(hasShovel: boolean): ShovelSnapshot
+	return { HasShovel = hasShovel }
 end
 
 function Snapshot.production(stats: {

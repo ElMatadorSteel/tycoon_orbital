@@ -441,6 +441,8 @@ export type Config = {
 	-- steps on it, and reading Balance from an adapter is what this project
 	-- does not do.
 	researchMineCost: number,
+	-- Likewise, for the shovel pad down in the pit.
+	shovelCost: number,
 }
 
 function StationSceneBuilder.new(config: Config)
@@ -451,6 +453,9 @@ function StationSceneBuilder.new(config: Config)
 		-- Application inverts the dependency rule, and the answer has to come
 		-- back out anyway so the pad can refuse (see :refuseResearchMine).
 		researchPadTouched = Signal.new(),
+		-- Same contract as the pad above, for the shovel sold down in the pit.
+		shovelPadTouched = Signal.new(),
+		_shovelTool = ResearchMineBuilder.buildShovelTool(),
 		_slots = Layout.slots(config.layoutRules),
 		_owner = {} :: { [number]: number }, -- slotIndex -> userId
 		_origin = {} :: { [number]: CFrame }, -- userId -> plot origin
@@ -459,8 +464,38 @@ function StationSceneBuilder.new(config: Config)
 		_spawn = {} :: { [number]: SpawnLocation }, -- userId -> station spawn point
 		_pad = {} :: { [number]: any }, -- userId -> ResearchMineBuilder.PadHandle
 		_mine = {} :: { [number]: Model }, -- userId -> research mine, once opened
+		_shovelPad = {} :: { [number]: any }, -- userId -> the pit's shovel pad
 		_models = {} :: { [number]: { [string]: Model } }, -- userId -> gridKey -> module Model
 	}, StationSceneBuilder)
+end
+
+-- Wires one tycoon pad to the signal that speaks for it. Shared by the two
+-- pads rather than written out twice: the debounce and the ownership check
+-- are the parts that matter, and a second copy of either is a second chance
+-- to get them wrong.
+function StationSceneBuilder:_bindPad(handle: any, userId: number, signal: any)
+	local lastTouch = 0
+	handle.pad.Touched:Connect(function(hit: BasePart)
+		-- Touched fires every frame a foot rests on the pad and the use case
+		-- behind it loads a profile. Gated on elapsed time rather than on a
+		-- boolean flag: a flag left set by an early return jams the pad shut
+		-- for the rest of the session.
+		local now = os.clock()
+		if now - lastTouch < 0.75 then
+			return
+		end
+
+		local character = hit:FindFirstAncestorOfClass("Model")
+		local player = character and game:GetService("Players"):GetPlayerFromCharacter(character)
+		-- The owner and nobody else: a visitor walking across someone else's
+		-- plot must not spend their credits for them.
+		if not player or player.UserId ~= userId then
+			return
+		end
+
+		lastTouch = now
+		signal:Fire(userId)
+	end)
 end
 
 -- Builds the structure only when claimed: an unclaimed slot stays
@@ -514,29 +549,7 @@ function StationSceneBuilder:claimPlot(userId: number): boolean
 			)
 			self._pad[userId] = pad
 
-			local lastTouch = 0
-			pad.pad.Touched:Connect(function(hit: BasePart)
-				-- Touched fires every frame a foot rests on the pad and the use
-				-- case behind it loads a profile. Gated on elapsed time rather
-				-- than on a boolean flag: a flag left set by an early return
-				-- jams the pad shut for the rest of the session.
-				local now = os.clock()
-				if now - lastTouch < 0.75 then
-					return
-				end
-
-				local character = hit:FindFirstAncestorOfClass("Model")
-				local player = character
-					and game:GetService("Players"):GetPlayerFromCharacter(character)
-				-- The owner and nobody else: a visitor walking across someone
-				-- else's deck must not spend their credits for them.
-				if not player or player.UserId ~= userId then
-					return
-				end
-
-				lastTouch = now
-				self.researchPadTouched:Fire(userId)
-			end)
+			self:_bindPad(pad, userId, self.researchPadTouched)
 
 			self._origin[userId] = origin
 			self._structure[userId] = structure
@@ -598,10 +611,11 @@ function StationSceneBuilder:releasePlot(userId: number)
 	self._origin[userId] = nil
 	self._spawn[userId] = nil
 	self._models[userId] = nil
-	-- Both live under the structure destroyed above -- only the references
-	-- are dropped here.
+	-- All three live under the structure destroyed above -- only the
+	-- references are dropped here.
 	self._pad[userId] = nil
 	self._mine[userId] = nil
+	self._shovelPad[userId] = nil
 end
 
 ----------------------------------------------------------------------
@@ -621,13 +635,13 @@ function StationSceneBuilder:buildResearchMine(userId: number): boolean
 		return false
 	end
 
-	local zone = ResearchMineBuilder.buildZone(structure, origin, spanOf(self._config.gridRules))
+	local span = spanOf(self._config.gridRules)
+	local zone = ResearchMineBuilder.buildZone(structure, origin, span)
 	-- Named with the userId baked in, not just ResearchMineBuilder's own
 	-- generic "ResearchMine": the zone sits nested inside the anonymous
 	-- Plot_<slotIndex> structure, which the client has no way to resolve as
-	-- "mine" -- ResearchController finds its own zone with a RECURSIVE
-	-- FindFirstChild by this exact name instead (same problem, same fix, as
-	-- Station_<userId> already solves for the module folder one level up).
+	-- "mine" -- ResearchController's own vein-mining raycast finds its own
+	-- zone with a RECURSIVE FindFirstChild by this exact name instead.
 	zone.Name = `ResearchMine_{userId}`
 	self._mine[userId] = zone
 
@@ -636,7 +650,58 @@ function StationSceneBuilder:buildResearchMine(userId: number): boolean
 		ResearchMineBuilder.markUnlocked(pad)
 	end
 
+	-- The shovel's own pad goes in with the zone, so it cannot be reached
+	-- before the mine exists. Parented to the mine model rather than the plot
+	-- structure: it belongs to the pit, and goes when the pit goes.
+	local shovelPad = ResearchMineBuilder.buildShovelPad(
+		self._mine[userId],
+		origin,
+		span,
+		self._config.shovelCost
+	)
+	self._shovelPad[userId] = shovelPad
+	self:_bindPad(shovelPad, userId, self.shovelPadTouched)
+
 	return true
+end
+
+-- Puts the tool in the player's hands. Backpack AND StarterGear: a Backpack
+-- is emptied and refilled from StarterGear on every respawn, so writing only
+-- the first would take the shovel away the first time the player died.
+function StationSceneBuilder:grantShovel(userId: number): boolean
+	local player = game:GetService("Players"):GetPlayerByUserId(userId)
+	if not player then
+		return false
+	end
+
+	local gear = player:FindFirstChildOfClass("StarterGear")
+	if gear and not gear:FindFirstChild("Pelle") then
+		self._shovelTool:Clone().Parent = gear
+	end
+
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	local character = player.Character
+	local held = (backpack and backpack:FindFirstChild("Pelle"))
+		or (character and character:FindFirstChild("Pelle"))
+	if backpack and not held then
+		self._shovelTool:Clone().Parent = backpack
+	end
+
+	return true
+end
+
+function StationSceneBuilder:markShovelUnlocked(userId: number)
+	local pad = self._shovelPad[userId]
+	if pad then
+		ResearchMineBuilder.markUnlocked(pad)
+	end
+end
+
+function StationSceneBuilder:refuseShovel(userId: number)
+	local pad = self._shovelPad[userId]
+	if pad then
+		ResearchMineBuilder.refuse(pad)
+	end
 end
 
 function StationSceneBuilder:hasResearchMine(userId: number): boolean

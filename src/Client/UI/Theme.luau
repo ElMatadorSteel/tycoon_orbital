@@ -121,6 +121,10 @@ Theme.Function = {
 	Move = Color3.fromRGB(56, 191, 199),
 	Rebirth = Color3.fromRGB(230, 90, 200),
 	Ultimate = Color3.fromRGB(255, 205, 60),
+	-- The research zone. Ice cyan rather than another blue-green: Move's teal
+	-- is muted and Build's blue is saturated, and this has to be told apart
+	-- from both at icon size with no label under it.
+	Research = Color3.fromRGB(120, 240, 255),
 }
 
 -- Windows are dark GLASS, not painted panels.
@@ -191,6 +195,38 @@ Theme.Label = {
 -- HudController still hold their strings inline. New text goes here.
 
 Theme.Words = {
+	-- The research exchange. Every string the panel shows lives here, so the
+	-- zone can be renamed or translated without opening a view.
+	Research = {
+		Title = "Zone de recherche",
+		Subtitle = "Échange des minerais extraits de la mine",
+		Button = "Recherche",
+		Close = "Fermer",
+		SellAll = "Tout échanger",
+		Sell = "Échanger",
+		Empty = "Aucun minerai. Descends dans la mine pour en extraire.",
+		Locked = "Zone de recherche verrouillée. Marche sur le pad au bord du deck pour l'ouvrir.",
+		Total = function(amount: number): string
+			return `Valeur totale : {amount} ¢`
+		end,
+		Held = function(count: number): string
+			return `x{count}`
+		end,
+		UnitValue = function(value: number): string
+			return `{value} ¢ l'unité`
+		end,
+		Sold = function(amount: number): string
+			return `+{amount} ¢`
+		end,
+		Depth = function(depth: number): string
+			return `Terrasse {depth}`
+		end,
+		-- The sections the panel does not fill yet. Named rather than left
+		-- blank so the shape of what is coming is visible in one place.
+		SoonTitle = "Bientôt",
+		Soon = "Foreuse, raffinage et réparation de la fusée.",
+	},
+
 	EclipseIncoming = function(seconds: number): string
 		return `Éclipse dans : {seconds}s`
 	end,

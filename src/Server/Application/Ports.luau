@@ -106,6 +106,13 @@ export type SceneBuilder = {
 	buildResearchMine: (self: SceneBuilder, userId: number) -> boolean,
 	hasResearchMine: (self: SceneBuilder, userId: number) -> boolean,
 	refuseResearchMine: (self: SceneBuilder, userId: number) -> (),
+	-- The shovel: putting the tool in the player's hands, and the two ways
+	-- its pad answers. grantShovel returns false when the player is not
+	-- connected -- the profile still carries the unlock, so the next join
+	-- hands it over (see RestoreStation).
+	grantShovel: (self: SceneBuilder, userId: number) -> boolean,
+	markShovelUnlocked: (self: SceneBuilder, userId: number) -> (),
+	refuseShovel: (self: SceneBuilder, userId: number) -> (),
 }
 
 -- Moves a player's character -- to the lobby, or to their claimed station.
@@ -115,6 +122,22 @@ export type SceneBuilder = {
 export type Teleporter = {
 	sendToLobby: (self: Teleporter, userId: number) -> (),
 	sendToStation: (self: Teleporter, userId: number) -> (),
+}
+
+-- Applies a movement decision to the character. Separate from Teleporter --
+-- that one moves a body to a place, this one changes how the body moves --
+-- and, like it, deliberately not a generic "set any Humanoid property":
+-- Application has no Humanoid to hand it and no business knowing there is
+-- one.
+--
+-- The implementation is expected to REMEMBER the commanded speed and
+-- re-apply it whenever the character is rebuilt. WalkSpeed lives on the
+-- Humanoid, which dies with every respawn and every trip to the lobby, so
+-- an actuator that only wrote once would be forgotten almost immediately.
+-- release() drops that memory, on PlayerRemoving.
+export type MovementActuator = {
+	setWalkSpeed: (self: MovementActuator, userId: number, speed: number) -> (),
+	release: (self: MovementActuator, userId: number) -> (),
 }
 
 -- The Railgun mining side-feature's asteroid visuals. Deliberately just

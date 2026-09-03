@@ -33,6 +33,7 @@ local Profile = require(fromShared("Domain/Profile/Profile"))
 local Railgun = require(fromShared("Domain/Mining/Railgun"))
 local AsteroidTiers = require(fromShared("Domain/Mining/AsteroidTiers"))
 local ResearchMine = require(fromShared("Domain/Research/ResearchMine"))
+local Shovel = require(fromShared("Domain/Research/Shovel"))
 local Vein = require(fromShared("Domain/Research/Vein"))
 local SpendCredits = require("../Application/UseCases/SpendCredits")
 local AddCredits = require("../Application/UseCases/AddCredits")
@@ -41,11 +42,11 @@ local RemoveModule = require("../Application/UseCases/RemoveModule")
 local UpgradeModule = require("../Application/UseCases/UpgradeModule")
 local MoveModule = require("../Application/UseCases/MoveModule")
 local RestoreStation = require("../Application/UseCases/RestoreStation")
+local RebirthStation = require("../Application/UseCases/RebirthStation")
 local EmbarkStation = require("../Application/UseCases/EmbarkStation")
 local ReturnToLobby = require("../Application/UseCases/ReturnToLobby")
 local RunProductionTick = require("../Application/UseCases/RunProductionTick")
 local CheckObjectiveProgress = require("../Application/UseCases/CheckObjectiveProgress")
-local RebirthStation = require("../Application/UseCases/RebirthStation")
 local DevSetPass = require("../Application/UseCases/DevSetPass")
 local DevSetRebirths = require("../Application/UseCases/DevSetRebirths")
 local DevSetUnlimitedMoney = require("../Application/UseCases/DevSetUnlimitedMoney")
@@ -56,7 +57,10 @@ local FireRailgun = require("../Application/UseCases/FireRailgun")
 local UnlockResearchMine = require("../Application/UseCases/UnlockResearchMine")
 local RestoreResearchMine = require("../Application/UseCases/RestoreResearchMine")
 local MineVein = require("../Application/UseCases/MineVein")
+local UnlockShovel = require("../Application/UseCases/UnlockShovel")
 local SellOres = require("../Application/UseCases/SellOres")
+local DevGiveOres = require("../Application/UseCases/DevGiveOres")
+local DevSetWalkSpeed = require("../Application/UseCases/DevSetWalkSpeed")
 
 export type Ports = {
 	profileRepository: any, -- Ports.ProfileRepository
@@ -67,6 +71,7 @@ export type Ports = {
 	sceneBuilder: any, -- Ports.SceneBuilder
 	teleporter: any, -- Ports.Teleporter
 	asteroidField: any, -- Ports.AsteroidField
+	movementActuator: any, -- Ports.MovementActuator
 }
 
 -- Plain balance numbers, not ports: there is nothing to swap an
@@ -83,17 +88,18 @@ export type Rules = {
 	startingCredits: number, -- what RebirthStation resets credits back to
 	profileRules: Profile.Rules, -- what DevResetAll rebuilds a blank profile with
 	unlimitedMoneyCeiling: number, -- dev-only, see DevSetUnlimitedMoney
+	walkSpeed: DevSetWalkSpeed.Rules, -- dev-only, see DevSetWalkSpeed
 	railgun: Railgun.Rules,
 	asteroidTiers: AsteroidTiers.Rules,
-	asteroidLifetime: number, -- seconds an asteroid is shootable before it flies past
+	asteroidLifetime: number,
 	researchMine: ResearchMine.Rules,
+	shovel: Shovel.Rules,
 	vein: Vein.Rules,
 }
 
 export type Container = {
 	ports: Ports,
 	sessionRegistry: any,
-	development: boolean,
 	useCases: {
 		spendCredits: any,
 		addCredits: any,
@@ -107,18 +113,21 @@ export type Container = {
 		runProductionTick: any,
 		checkObjectiveProgress: any,
 		rebirthStation: any,
-		purchaseRailgun: any,
-		runMiningTick: any,
-		fireRailgun: any,
-		unlockResearchMine: any,
-		restoreResearchMine: any,
-		mineVein: any,
-		sellOres: any,
 		-- Only present when built with development = true:
 		devSetPass: any?,
 		devSetRebirths: any?,
 		devSetUnlimitedMoney: any?,
 		devResetAll: any?,
+		devSetWalkSpeed: any?,
+		purchaseRailgun: any,
+		runMiningTick: any,
+		fireRailgun: any,
+		unlockResearchMine: any,
+		unlockShovel: any,
+		restoreResearchMine: any,
+		mineVein: any,
+		sellOres: any,
+		devGiveOres: any?,
 	},
 }
 
@@ -135,8 +144,8 @@ function Container.new(
 		ports: Ports,
 		rules: Rules,
 		sessionRegistry: any,
-		-- Decided once in Bootstrap via RunService:IsStudio() (see CLAUDE.md's
-		-- "development-only affordances" rule) -- never inferred here.
+		-- Decided once in Bootstrap via RunService:IsStudio() -- never inferred
+		-- here.
 		development: boolean?,
 	}
 ): Container
@@ -301,6 +310,13 @@ function Container.new(
 			veinRules = rules.vein,
 		}, MineVein),
 
+		unlockShovel = setmetatable({
+			profileRepository = ports.profileRepository,
+			statsPublisher = ports.statsPublisher,
+			sceneBuilder = ports.sceneBuilder,
+			shovelRules = rules.shovel,
+		}, UnlockShovel),
+
 		sellOres = setmetatable({
 			profileRepository = ports.profileRepository,
 			statsPublisher = ports.statsPublisher,
@@ -308,11 +324,10 @@ function Container.new(
 		}, SellOres),
 	}
 
-	-- Dev-only affordances, never present in production: see CLAUDE.md's
-	-- rule that these must be appended by the container, only in
-	-- development mode, going through the exact same use-case path a real
-	-- purchase (or, for DevSetUnlimitedMoney/DevSetRebirths/DevResetAll,
-	-- nothing real at all -- there is no player-facing equivalent) would.
+	-- Dev-only affordances, never present in production: appended by the
+	-- container only in development mode, going through the exact same
+	-- use-case path a real equivalent (or, for devSetUnlimitedMoney/
+	-- devSetRebirths/devResetAll, nothing real at all) would.
 	if options.development then
 		local castUseCases = useCases :: any
 		castUseCases.devSetPass = setmetatable({
@@ -338,6 +353,14 @@ function Container.new(
 			statsPublisher = ports.statsPublisher,
 			profileRules = rules.profileRules,
 		}, DevResetAll)
+		castUseCases.devGiveOres = setmetatable({
+			profileRepository = ports.profileRepository,
+			statsPublisher = ports.statsPublisher,
+		}, DevGiveOres)
+		castUseCases.devSetWalkSpeed = setmetatable({
+			movementActuator = ports.movementActuator,
+			walkSpeedRules = rules.walkSpeed,
+		}, DevSetWalkSpeed)
 	end
 
 	return setmetatable({

@@ -28,6 +28,7 @@ end
 
 local Net = require(fromShared("Net"))
 local Signal = require(fromShared("Signal"))
+local OreCatalog = require(fromShared("Domain/Research/OreCatalog"))
 
 local player = Players.LocalPlayer
 
@@ -47,13 +48,23 @@ local WATCHED = {
 	"HeatLoad",
 	"HeatCapacity",
 	"Income",
+	"EclipseIn",
+	"InEclipse",
 	"Rebirths",
 	"HasUltimate",
 	"HasEarlyRebirth",
 	"GlobalBoost",
 	"HasRailgun",
 	"HasResearchMine",
+	"HasShovel",
 }
+
+-- One attribute per mineral, appended from the catalogue rather than typed
+-- out: the names are Snapshot.ore's own ("Ore" .. id), and a second hand-kept
+-- list would drift the first time an ore is added.
+for _, ore in OreCatalog.Ores do
+	table.insert(WATCHED, `Ore{ore.id}`)
+end
 
 local State = {}
 

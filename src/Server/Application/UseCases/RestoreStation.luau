@@ -30,6 +30,8 @@ end
 local Grid = require(fromShared("Domain/Grid/Grid"))
 local ModuleCatalog = require(fromShared("Domain/Station/ModuleCatalog"))
 local Placement = require(fromShared("Domain/Station/Placement"))
+local ResearchMine = require(fromShared("Domain/Research/ResearchMine"))
+local Shovel = require(fromShared("Domain/Research/Shovel"))
 local StationProfileSync = require("../StationProfileSync")
 
 export type Dependencies = {
@@ -91,6 +93,23 @@ function RestoreStation:run(userId: number)
 		table.insert(station.placements, placement)
 
 		self.sceneBuilder:placeModule(userId, placement, definition)
+	end
+
+	-- The research extension is derived from the profile, never persisted as
+	-- geometry -- exactly like the modules above, and rebuilt on the same
+	-- once-per-session path. Without this a player who bought the mine finds
+	-- their gangway ending in the void after any server restart.
+	if ResearchMine.isUnlocked(profile.unlocked) then
+		self.sceneBuilder:buildResearchMine(userId)
+
+		-- Both derived from the profile, never persisted as scene state: the
+		-- tool because a Backpack does not survive a server restart, the pad's
+		-- colour because the pit was only just rebuilt above and comes back
+		-- locked-looking otherwise.
+		if Shovel.isUnlocked(profile.unlocked) then
+			self.sceneBuilder:grantShovel(userId)
+			self.sceneBuilder:markShovelUnlocked(userId)
+		end
 	end
 
 	self.stationRepository:save(userId, station)
