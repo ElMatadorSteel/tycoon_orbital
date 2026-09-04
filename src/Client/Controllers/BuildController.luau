@@ -1031,12 +1031,17 @@ function BuildController:Start()
 	-- Always starts in the lobby; the server will confirm.
 	self._panel:SetAvailable(false)
 
+	self._panel:SetRebirths((State.get("Rebirths") :: number?) or 0)
+	self._panel:SetUltimateOwned(State.get("HasUltimate") == true)
+
 	State.Changed:Connect(function(key: string, value: any)
 		if key == "Location" then
 			self:_setLocation(value :: string)
 		elseif key == "Credits" then
 			self._credits = value :: number
 			self._panel:SetCredits(self._credits)
+		elseif key == "Rebirths" then
+			self._panel:SetRebirths((value :: number?) or 0)
 		elseif key == "HasUltimate" then
 			self._panel:SetUltimateOwned(value == true)
 		end
@@ -1051,7 +1056,6 @@ function BuildController:Start()
 		self._credits = initialCredits :: number
 		self._panel:SetCredits(self._credits)
 	end
-	self._panel:SetUltimateOwned(State.get("HasUltimate") == true)
 
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		self:_onInput(input, gameProcessed)

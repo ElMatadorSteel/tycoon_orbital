@@ -127,6 +127,22 @@ Theme.Function = {
 	Research = Color3.fromRGB(120, 240, 255),
 }
 
+-- The five tiers of Domain/Research/Rarity, as the colour a backpack slot is
+-- ringed with. Keyed by the domain's own RarityId so the two cannot drift.
+--
+-- A ramp from cold grey to hot pink rather than five unrelated hues: rarity
+-- is a RANK, and a player has to read it across a grid at a glance, before
+-- any label. Deliberately distinct from the minerals' own colours, which say
+-- WHICH mineral, not how rare it is -- an Iron slot is grey-ringed and a
+-- Mythic one pink-ringed whatever the ore itself looks like.
+Theme.Rarity = {
+	Common = Color3.fromRGB(150, 160, 190),
+	Rare = Color3.fromRGB(78, 176, 255),
+	Epic = Color3.fromRGB(190, 110, 255),
+	Legendary = Color3.fromRGB(255, 170, 60),
+	Mythic = Color3.fromRGB(255, 90, 140),
+}
+
 -- Windows are dark GLASS, not painted panels.
 --
 -- Roblox has no backdrop blur for a GuiObject, so the effect is built from the

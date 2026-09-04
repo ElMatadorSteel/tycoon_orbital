@@ -119,14 +119,15 @@ local DRILL_PAD_RADIUS = 11
 -- read from the entrance to the drill site, rather than a scavenger hunt.
 local STAIR_ANGLE = math.pi
 
--- Angles the veins outcrop at, in degrees. The stairs come in at 180 and the
--- research post sits at 90; these four avoid both.
-local VEIN_ANGLES = { 30, 115, 215, 305 }
-
--- Where the shovel pad stands on the rim terrace. Clear of the stairs (180),
--- the research post (90) and every vein angle above, with the widest gap it
--- can get from all of them.
+-- Where the shovel pad stands on the rim terrace. Clear of the stairs (180)
+-- and the research post (90), with the widest gap it can get from both.
 local SHOVEL_ANGLE = 145
+
+-- Block grid: 8x8 cells per layer, 3 layers stacked downward from the pit
+-- floor. Sized so the full grid fits inside FLOOR_RADIUS (8 * 3.5 = 28).
+local BLOCK_SIZE = 3.5
+local GRID_CELLS = 8
+local BLOCK_GAP = 0.08 -- hairline gap so adjacent blocks don't z-fight
 
 local PALETTE = {
 	Rock = Color3.fromRGB(84, 78, 74),
@@ -591,13 +592,7 @@ local function buildEntrance(model: Model, origin: CFrame, centreZ: number)
 	})
 	pointLight(lintel, PALETTE.Trim, 42, 2)
 
-	-- Read off the catalogue rather than spelled out: the sign at the door
-	-- and the veins inside cannot then disagree about what is in there.
-	local names = {}
-	for _, ore in OreCatalog.Ores do
-		table.insert(names, ore.name)
-	end
-	label(lintel, "MINE DE RECHERCHE", table.concat(names, " \u{00B7} "))
+	label(lintel, "MINE DE RECHERCHE", "Creusez bloc par bloc")
 end
 
 local function buildTerrace(model: Model, origin: CFrame, centreZ: number, index: number)
@@ -680,105 +675,80 @@ local function buildStairs(
 	end
 end
 
--- The attributes are the point of this function, not the crystals: the
--- digging that comes next needs to know what it just hit, and a vein whose
--- ore is implied by its colour is a vein no rule can read.
+-- Builds the block grid: a folder of Parts, one per undug cell, arranged in
+-- 3 layers stacked downward from the pit floor. Each block carries Layer,
+-- BlockX, BlockY attributes so the client's raycast can identify it. Named
+-- `Block_{layer}_{x}_{y}` for removeBlock to find by name.
 --
--- `terrace`/`slot` are what a client's raycast turns back into
--- OreCatalog.veinId(terrace, slot) -- the network id MineVein validates a
--- claimed hit against. Stamped alongside the ore's own attributes rather
--- than in place of them: OreId/Rarity/Hardness/Value/Depth are what a label
--- or an inspector reads, VeinId is what a click sends over the wire.
-local function buildVein(
-	model: Model,
+-- `gridState` is a MineGrid.MineState -- see Domain/Research/MineGrid. The
+-- function only builds Parts for cells that have NOT been dug yet (so a
+-- restored mine starts with its holes).
+local function buildBlockGrid(
+	parent: Instance,
 	origin: CFrame,
 	centreZ: number,
-	ore: Ore,
-	radius: number,
-	height: number,
-	angleDegrees: number,
-	seed: number,
-	terrace: number,
-	slot: number
-)
-	local angle = math.rad(angleDegrees)
+	gridState: any -- MineGrid.MineState
+): Folder
+	local folder = Instance.new("Folder")
+	folder.Name = "BlockGrid"
 
-	local cluster = Instance.new("Model")
-	cluster.Name = `Vein_{terrace}_{slot}_{ore.id}`
-	cluster:SetAttribute("OreId", ore.id)
-	cluster:SetAttribute("Rarity", ore.rarity)
-	cluster:SetAttribute("Hardness", ore.hardness)
-	cluster:SetAttribute("Value", ore.value)
-	cluster:SetAttribute("Depth", ore.depth)
-	cluster:SetAttribute("VeinId", OreCatalog.veinId(terrace, slot))
+	local gridSpan = GRID_CELLS * BLOCK_SIZE
+	-- Centred on the pit floor.
+	local baseX = -gridSpan / 2
+	local baseZ = centreZ - gridSpan / 2
 
-	-- Local +Z points radially outward (CFrame.Angles(0, a, 0) sends +Z to
-	-- sin/cos), so -Z is into the pit: that is where the crystals go.
-	local base = origin
-		* CFrame.new(math.sin(angle) * radius, height, centreZ + math.cos(angle) * radius)
-		* CFrame.Angles(0, angle, 0)
+	for layerIndex, layerState in gridState.layers do
+		local layerY = FLOOR_TOP - (layerIndex - 1) * BLOCK_SIZE
 
-	local matrix = part(cluster, "Matrix", {
-		Size = Vector3.new(9, 8, 3),
-		CFrame = base,
-		Color = PALETTE.RockDark,
-		Material = Enum.Material.Rock,
-	})
+		for cellY = 0, GRID_CELLS - 1 do
+			for cellX = 0, GRID_CELLS - 1 do
+				local key = `{cellX},{cellY}`
+				if layerState.dug[key] then
+					continue -- already broken
+				end
 
-	-- An authored mineral model, one per ore id, kept in ReplicatedStorage
-	-- next to the Drill -- see drillTemplate's own note on why an authored
-	-- asset lives only in the place file and cannot be rebuilt from the
-	-- repository. Falls back to the original procedural neon crystal
-	-- cluster when no model exists for this ore yet, so a mine is never
-	-- missing its veins just because an asset has not been inserted.
-	local mineralFolder = if game
-		then (game :: any):GetService("ReplicatedStorage"):FindFirstChild("ResearchModels")
-		else nil
-	local mineralTemplate = mineralFolder and mineralFolder:FindFirstChild(`Ore_{ore.id}`)
+				local oreId = layerState.ores[key]
+				local colour: Color3
+				local material: Enum.Material
+				if oreId then
+					local ore = OreCatalog.get(oreId)
+					if ore then
+						colour = colourOf(ore)
+						material = Enum.Material.SmoothPlastic
+					else
+						colour = PALETTE.Rock
+						material = Enum.Material.Slate
+					end
+				else
+					-- Dirt block
+					local h = hash(cellX + layerIndex * 100, cellY)
+					colour = if h > 0.5 then PALETTE.Rock else PALETTE.RockDark
+					material = Enum.Material.Slate
+				end
 
-	if mineralTemplate and mineralTemplate:IsA("Model") then
-		for index = 1, 5 do
-			local a = hash(seed, index)
-			local b = hash(index, seed + 7)
-			local crystal = mineralTemplate:Clone()
-			crystal.Name = "Crystal"
-			for _, descendant in crystal:GetDescendants() do
-				if descendant:IsA("BasePart") then
-					descendant.Anchored = true
-					descendant.CanCollide = false
+				local size = BLOCK_SIZE - BLOCK_GAP
+				local block = part(folder, `Block_{layerIndex}_{cellX}_{cellY}`, {
+					Size = Vector3.new(size, size, size),
+					CFrame = origin * CFrame.new(
+						baseX + (cellX + 0.5) * BLOCK_SIZE,
+						layerY - BLOCK_SIZE / 2,
+						baseZ + (cellY + 0.5) * BLOCK_SIZE
+					),
+					Color = colour,
+					Material = material,
+				})
+				block:SetAttribute("Layer", layerIndex)
+				block:SetAttribute("BlockX", cellX)
+				block:SetAttribute("BlockY", cellY)
+				if oreId then
+					block:SetAttribute("OreId", oreId)
 				end
 			end
-			crystal.PrimaryPart = nil
-			local scale = 0.55 + a * 0.5
-			crystal:PivotTo(
-				base
-					* CFrame.new((a - 0.5) * 6.4, (b - 0.5) * 5 - index * 0.03, -1.4)
-					* CFrame.Angles(a * 6.28, b * 6.28, a * 4)
-			)
-			crystal:ScaleTo(scale)
-			crystal.Parent = cluster
-		end
-	else
-		for index = 1, 5 do
-			local a = hash(seed, index)
-			local b = hash(index, seed + 7)
-			-- The 0.03 per crystal keeps two of them, or a crystal and the
-			-- rock behind it, from topping out on the same plane by
-			-- coincidence.
-			part(cluster, "Crystal", {
-				Size = Vector3.new(1.1 + a * 1.4, 1.1 + b * 2.2, 1.1 + a * 1.2),
-				CFrame = base
-					* CFrame.new((a - 0.5) * 6.4, (b - 0.5) * 5 - index * 0.03, -1.4)
-					* CFrame.Angles(a * 2, b * 2, a * 3),
-				Color = colourOf(ore),
-				Material = Enum.Material.Neon,
-				CanCollide = false,
-			})
 		end
 	end
 
-	pointLight(matrix, colourOf(ore), 16, 1.1)
-	cluster.Parent = model
+	folder.Parent = parent
+	return folder
 end
 
 local function buildResearchPost(model: Model, origin: CFrame, centreZ: number)
@@ -848,13 +818,24 @@ local function drillTemplate(): Model?
 	return nil
 end
 
+-- The drill now sits on the outer rim at angle 0 (farthest from the
+-- entrance at angle π), instead of at the pit centre. This leaves the
+-- centre clear for the block grid.
+local DRILL_ANGLE = 0
+local DRILL_RIM_RADIUS = (TERRACES[1].outer + TERRACES[1].inner) / 2
+
 local function buildDrillSite(model: Model, origin: CFrame, centreZ: number)
-	local padTop = FLOOR_TOP + 1.1
+	local terrace = TERRACES[1]
+	local angle = DRILL_ANGLE
+	local drillX = math.sin(angle) * DRILL_RIM_RADIUS
+	local drillZ = centreZ + math.cos(angle) * DRILL_RIM_RADIUS
+
+	local padTop = terrace.top + 0.3
 	local pad = part(model, "DrillSite", {
 		Shape = Enum.PartType.Cylinder,
 		Size = Vector3.new(1.2, DRILL_PAD_RADIUS * 2, DRILL_PAD_RADIUS * 2),
 		CFrame = origin
-			* CFrame.new(0, FLOOR_TOP + 0.6 - SEAT, centreZ)
+			* CFrame.new(drillX, padTop - SEAT, drillZ)
 			* CFrame.Angles(0, 0, math.rad(90)),
 		Color = PALETTE.Structure,
 		Material = Enum.Material.DiamondPlate,
@@ -869,39 +850,26 @@ local function buildDrillSite(model: Model, origin: CFrame, centreZ: number)
 		local drill = template:Clone()
 		drill.Name = "Drill"
 
-		-- Seated by its BOUNDING BOX, not by its pivot. An authored model's
-		-- pivot sits wherever its author happened to leave it, which is
-		-- almost never its base -- pivoting straight onto the pad buries it
-		-- or floats it. So: place it, measure where its underside actually
-		-- ended up, then correct by the difference.
-		drill:PivotTo(origin * CFrame.new(0, 0, centreZ))
+		drill:PivotTo(origin * CFrame.new(drillX, 0, drillZ))
 		local box, size = drill:GetBoundingBox()
-		local target = (origin * CFrame.new(0, padTop, centreZ)).Position.Y
+		local target = (origin * CFrame.new(drillX, padTop, drillZ)).Position.Y
 		drill:PivotTo(drill:GetPivot() * CFrame.new(0, target - (box.Position.Y - size.Y / 2), 0))
 
 		drill.ModelStreamingMode = Enum.ModelStreamingMode.Default
 		drill.Parent = model
 
-		-- `target` is where the machine's BASE now sits and `size.Y` is its
-		-- height, so target + size.Y is its roofline. Derived, not measured:
-		-- `box` above was taken BEFORE the seating PivotTo and its centre is
-		-- stale by exactly the correction that followed -- reading it here put
-		-- the sign 27 studs over the drill instead of 5. Translation does not
-		-- change `size`, which is why that half of the reading is still good.
 		signHeight = (target + size.Y + 5) - pad.Position.Y
 		subtitle = "Inactive"
 	else
-		-- Nothing standing here: mark the footprint so the spot still reads as
-		-- a place something belongs rather than as bare plate.
 		for index = 0, 3 do
-			local angle = (index / 4) * math.pi * 2 + math.pi / 4
+			local a = (index / 4) * math.pi * 2 + math.pi / 4
 			part(model, "DrillAnchor", {
 				Size = Vector3.new(2, 3, 2),
 				CFrame = origin * CFrame.new(
-					math.sin(angle) * (DRILL_PAD_RADIUS - 1),
-					FLOOR_TOP + 1.5 - SEAT,
-					centreZ + math.cos(angle) * (DRILL_PAD_RADIUS - 1)
-				) * CFrame.Angles(0, angle, 0),
+					drillX + math.sin(a) * (DRILL_PAD_RADIUS - 1),
+					padTop + 1.5 - SEAT,
+					drillZ + math.cos(a) * (DRILL_PAD_RADIUS - 1)
+				) * CFrame.Angles(0, a, 0),
 				Color = PALETTE.Trim,
 				Material = Enum.Material.Neon,
 				CanCollide = false,
@@ -911,6 +879,38 @@ local function buildDrillSite(model: Model, origin: CFrame, centreZ: number)
 
 	pointLight(pad, PALETTE.Trim, 34, 1.8)
 	label(pad, "FOREUSE", subtitle, signHeight)
+end
+
+-- A teleport pad at the bottom of the mine, with a ProximityPrompt that
+-- sends the player back to the surface (the gangway entrance). The actual
+-- teleport is client-side: the pad fires a ProximityPrompt, and the client
+-- reads the surface CFrame from the pad's SurfaceTarget attribute.
+local function buildSurfacePad(model: Model, origin: CFrame, centreZ: number)
+	local surfaceZ = centreZ - MINE_RADIUS + 8
+	local pad = part(model, "SurfacePad", {
+		Size = Vector3.new(6, 0.5, 6),
+		CFrame = origin * CFrame.new(0, FLOOR_TOP + 0.3, centreZ),
+		Color = PALETTE.Trim,
+		Material = Enum.Material.Neon,
+	})
+
+	-- Store the surface destination as a CFrame attribute so the client can
+	-- read it without any remote call.
+	local surfaceCFrame = origin * CFrame.new(0, WALK_Y + 1, surfaceZ)
+	pad:SetAttribute("SurfaceX", surfaceCFrame.Position.X)
+	pad:SetAttribute("SurfaceY", surfaceCFrame.Position.Y)
+	pad:SetAttribute("SurfaceZ", surfaceCFrame.Position.Z)
+
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.ActionText = "Remonter"
+	prompt.ObjectText = "Surface"
+	prompt.HoldDuration = 0
+	prompt.MaxActivationDistance = 12
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = pad
+
+	pointLight(pad, PALETTE.Trim, 20, 1.4)
+	label(pad, "SURFACE", "Remonter à la surface", 3)
 end
 
 function ResearchMineBuilder.buildZone(parent: Instance, origin: CFrame, span: number): Model
@@ -936,12 +936,18 @@ function ResearchMineBuilder.buildZone(parent: Instance, origin: CFrame, span: n
 		Color = PALETTE.RockDark,
 	})
 
-	-- Three flights straight down the -Z side, in line with the gangway: one
-	-- unbroken read from the entrance to the drill site. Each lands on the
-	-- terrace below it, so the descent has no drop in it. Derived from the
-	-- terrace table rather than spelled out: the two used to be six literals
-	-- that had to be edited together, which is a step into thin air waiting
-	-- to happen the first time a terrace moves.
+	-- Bedrock below the deepest layer: a floor the player falls onto after
+	-- digging through all three layers.
+	local bedrockY = FLOOR_TOP - #TERRACES * BLOCK_SIZE
+	part(model, "Bedrock", {
+		Shape = Enum.PartType.Cylinder,
+		Size = Vector3.new(2, FLOOR_RADIUS * 2, FLOOR_RADIUS * 2),
+		CFrame = origin
+			* CFrame.new(0, bedrockY - 1, centreZ)
+			* CFrame.Angles(0, 0, math.rad(90)),
+		Color = PALETTE.RockDark,
+	})
+
 	for index, terrace in TERRACES do
 		local deeper = TERRACES[index + 1]
 		local landsOn = if deeper then deeper.top else FLOOR_TOP
@@ -959,36 +965,44 @@ function ResearchMineBuilder.buildZone(parent: Instance, origin: CFrame, span: n
 		)
 	end
 
-	for index, terrace in TERRACES do
-		local ores = OreCatalog.atDepth(index)
-		if #ores == 0 then
-			continue
-		end
-		for slot, angleDegrees in VEIN_ANGLES do
-			buildVein(
-				model,
-				origin,
-				centreZ,
-				ores[(slot - 1) % #ores + 1],
-				terrace.inner + 1,
-				terrace.top - 5,
-				angleDegrees,
-				index * 10 + slot,
-				index,
-				slot
-			)
-		end
-	end
-
 	buildResearchPost(model, origin, centreZ)
 	buildDrillSite(model, origin, centreZ)
+	buildSurfacePad(model, origin, centreZ)
 
-	-- Streams like the ordinary far-away scenery it is. The plot structure
-	-- is Persistent because modules would float without it; nothing is
-	-- anchored to this from elsewhere, and it sits 300 studs off the deck.
 	model.ModelStreamingMode = Enum.ModelStreamingMode.Default
 	model.Parent = parent
 	return model
+end
+
+-- Build the block grid inside an existing mine zone. Called separately from
+-- buildZone because the grid state must be generated/loaded by the server
+-- before it can be rendered, and that loading happens in Application land.
+function ResearchMineBuilder.buildBlockGrid(
+	zone: Model,
+	origin: CFrame,
+	span: number,
+	gridState: any
+): Folder
+	-- Remove any previous grid (idempotent on restore)
+	local old = zone:FindFirstChild("BlockGrid")
+	if old then
+		old:Destroy()
+	end
+	local centreZ = span / 2 + MINE_DISTANCE
+	return buildBlockGrid(zone, origin, centreZ, gridState)
+end
+
+-- Destroy a single block Part by name. Called by DigBlock after the server
+-- validates the dig.
+function ResearchMineBuilder.removeBlock(zone: Model, layer: number, x: number, y: number)
+	local grid = zone:FindFirstChild("BlockGrid")
+	if not grid then
+		return
+	end
+	local block = grid:FindFirstChild(`Block_{layer}_{x}_{y}`)
+	if block then
+		block:Destroy()
+	end
 end
 
 function ResearchMineBuilder.markUnlocked(handle: PadHandle)

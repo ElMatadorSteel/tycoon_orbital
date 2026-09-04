@@ -1,7 +1,7 @@
 --!strict
 -- Drives the research zone: opens the ore panel from the dock button, keeps
 -- its lines in step with the replicated attributes, sends a sale -- and
--- mines the veins in the pit the panel's own bag fills from.
+-- mines the blocks in the pit the panel's own bag fills from.
 --
 -- The panel button lives in BuildPanel's left dock, beside Lobby and
 -- Renaissance, because that dock is the home of every control that takes
@@ -10,16 +10,13 @@
 -- screen edge would overlap, and the one that already exists is the one the
 -- player knows.
 --
--- Mining a vein needs no equipped Tool, unlike the Railgun: a vein is a
+-- Mining a block needs no equipped Tool, unlike the Railgun: a block is a
 -- fixed fixture a player walks up to and clicks, not a moving target aimed
 -- at from across a station. A plain click, filtered to the player's OWN
--- research-mine folder, is enough -- a stray click anywhere else in the game
--- simply hits nothing there and no-ops, the same way BuildController's
--- demolish-click only ever does something when a real module is under it.
--- The client only ever CLAIMS which vein id it hit
--- (Net.MineVein:InvokeServer(veinId)) -- the server is sole judge of
--- whether that claim pays out (see Application/UseCases/MineVein's own
--- header).
+-- research-mine BlockGrid folder, is enough -- a stray click anywhere else
+-- simply hits nothing and no-ops. The client only ever CLAIMS which block
+-- it hit (Net.DigBlock:InvokeServer(layer, x, y)) -- the server is sole
+-- judge of whether that claim pays out (see Application/UseCases/DigBlock).
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -59,11 +56,7 @@ local function getCamera(): Camera
 end
 
 ----------------------------------------------------------------------
--- Ephemeral toast for a mined hit -- same visual language as
--- MiningController's own. The panel needs none of its own: a sale's result
--- is the bag emptying, which the panel already shows live off the
--- replicated attributes. A vein's result is a count going up somewhere the
--- player usually is NOT looking (the panel), so a hit still gets a toast.
+-- Ephemeral toast for a mined hit
 
 function ResearchController:_buildToast(gui: ScreenGui)
 	local icon = Theme.new("ImageLabel", {
@@ -87,9 +80,6 @@ function ResearchController:_buildToast(gui: ScreenGui)
 	self._toast = Theme.panel({
 		Name = "ResearchToast",
 		AnchorPoint = Vector2.new(0.5, 1),
-		-- Stacked just above MiningController's own toast band, so the two
-		-- side features never draw on top of each other if both ever fire
-		-- close together.
 		Position = UDim2.new(0.5, 0, 1, -(SPACE.xl + 60 + SPACE.md + Theme.Control.md + SPACE.sm)),
 		Size = UDim2.fromOffset(440, Theme.Control.md),
 		Radius = Theme.Radius.md,
@@ -120,18 +110,20 @@ function ResearchController:_toastMessage(message: string, isError: boolean?)
 end
 
 ----------------------------------------------------------------------
--- Mining
+-- Mining: raycast to find which block the player is looking at
 
--- Recursive: the zone (uniquely named ResearchMine_<userId> by
--- StationSceneBuilder) sits nested inside the anonymous Plot_<slotIndex>
--- structure, not as a direct child of workspace.Plots, and veins live
--- several layers inside THAT -- a plain FindFirstChild would only ever look
--- at one level.
-function ResearchController:_hoveredVeinId(): string?
+-- Returns the block Part if the crosshair is over a mineable block in the
+-- player's own mine, or nil otherwise. The block carries Layer, BlockX,
+-- BlockY attributes stamped by ResearchMineBuilder.buildBlockGrid.
+function ResearchController:_hoveredBlock(): BasePart?
 	local player = Players.LocalPlayer
 	local plots = workspace:FindFirstChild("Plots")
 	local zone = plots and plots:FindFirstChild(`ResearchMine_{player.UserId}`, true)
 	if not zone then
+		return nil
+	end
+	local grid = zone:FindFirstChild("BlockGrid")
+	if not grid then
 		return nil
 	end
 
@@ -141,45 +133,190 @@ function ResearchController:_hoveredVeinId(): string?
 
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Include
-	params.FilterDescendantsInstances = { zone }
+	params.FilterDescendantsInstances = { grid }
 
 	local result = workspace:Raycast(ray.Origin, ray.Direction * MAX_HIT_DISTANCE, params)
 	if not result then
 		return nil
 	end
 
-	local cluster = result.Instance:FindFirstAncestorWhichIsA("Model")
-	if not cluster then
+	local hit = result.Instance
+	if not hit:IsA("BasePart") then
 		return nil
 	end
 
-	local veinId = cluster:GetAttribute("VeinId")
-	return if typeof(veinId) == "string" then veinId else nil
+	-- Must have block attributes
+	local layer = hit:GetAttribute("Layer")
+	if typeof(layer) ~= "number" then
+		return nil
+	end
+
+	return hit :: BasePart
+end
+
+----------------------------------------------------------------------
+-- The dig swing
+
+local SWING_LIFT = TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local SWING_STRIKE = TweenInfo.new(0.09, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+local SWING_RECOVER = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local SWING_SECONDS = 0.1 + 0.09 + 0.22
+
+local SHOVEL_NAME = "Pelle"
+
+local function digAnimation(): Animation?
+	if not game then
+		return nil
+	end
+	local folder = (game :: any):GetService("ReplicatedStorage"):FindFirstChild("ResearchModels")
+	local animation = folder and folder:FindFirstChild("DigAnimation")
+	if animation and animation:IsA("Animation") and animation.AnimationId ~= "" then
+		return animation
+	end
+	return nil
+end
+
+function ResearchController:_playDigSwing()
+	local character = Players.LocalPlayer.Character
+	if not character then
+		return
+	end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		return
+	end
+
+	local animation = digAnimation()
+	if animation then
+		local animator = humanoid:FindFirstChildOfClass("Animator")
+		if animator then
+			local track = self._digTrack
+			if not track then
+				track = animator:LoadAnimation(animation)
+				track.Priority = Enum.AnimationPriority.Action
+				self._digTrack = track
+			end
+			track:Play(0.05)
+			return
+		end
+	end
+
+	local tool = character:FindFirstChild(SHOVEL_NAME)
+	if not (tool and tool:IsA("Tool")) then
+		return
+	end
+	if self._swinging then
+		return
+	end
+	self._swinging = true
+
+	local rest = tool.Grip
+	local function restore()
+		tool.Grip = rest
+		self._swinging = false
+	end
+
+	local lift = TweenService:Create(tool, SWING_LIFT, {
+		Grip = rest * CFrame.Angles(math.rad(22), 0, 0),
+	})
+	local strike = TweenService:Create(tool, SWING_STRIKE, {
+		Grip = rest * CFrame.Angles(math.rad(-50), 0, 0),
+	})
+	local recover = TweenService:Create(tool, SWING_RECOVER, { Grip = rest })
+
+	lift.Completed:Connect(function()
+		strike:Play()
+	end)
+	strike.Completed:Connect(function()
+		recover:Play()
+	end)
+	recover.Completed:Connect(restore)
+	lift:Play()
+
+	task.delay(SWING_SECONDS + 0.2, function()
+		if self._swinging then
+			restore()
+		end
+	end)
 end
 
 function ResearchController:_mine()
-	local veinId = self:_hoveredVeinId()
-	if not veinId then
-		return -- nothing under the cursor -- no network call, no cooldown spent
+	local block = self:_hoveredBlock()
+	if not block then
+		return
 	end
 
-	local ok, result = Net.MineVein:InvokeServer(veinId)
+	local layer = block:GetAttribute("Layer") :: number
+	local bx = block:GetAttribute("BlockX") :: number
+	local by = block:GetAttribute("BlockY") :: number
+
+	self:_playDigSwing()
+
+	local ok, result = Net.DigBlock:InvokeServer(layer, bx, by)
 	if ok then
-		self:_toastMessage(`+1 {result.oreName} ({result.count} au total)`, false)
+		if result.oreId then
+			self:_toastMessage(`+1 {result.oreName} ({result.newCount or "?"} au total)`, false)
+		else
+			self:_toastMessage("Terre", false)
+		end
 	else
-		self:_toastMessage(tostring(result), true)
+		if result == "cooldown" then
+			-- Silent: no toast for normal cooldown
+		else
+			self:_toastMessage(tostring(result), true)
+		end
 	end
+end
+
+----------------------------------------------------------------------
+-- Surface teleport: the ProximityPrompt on the SurfacePad teleports
+-- the player back to the gangway entrance.
+
+function ResearchController:_setupSurfaceTeleport()
+	local player = Players.LocalPlayer
+
+	-- The pad is built when the mine is built, which can happen after this
+	-- controller starts. Poll for it.
+	task.spawn(function()
+		while true do
+			local plots = workspace:FindFirstChild("Plots")
+			local zone = plots and plots:FindFirstChild(`ResearchMine_{player.UserId}`, true)
+			if zone then
+				local pad = zone:FindFirstChild("SurfacePad")
+				if pad and pad:IsA("BasePart") then
+					local prompt = pad:FindFirstChildOfClass("ProximityPrompt")
+					if prompt then
+						prompt.Triggered:Connect(function()
+							local character = player.Character
+							if not character then
+								return
+							end
+							local root = character:FindFirstChild("HumanoidRootPart")
+							if not root or not root:IsA("BasePart") then
+								return
+							end
+							local sx = pad:GetAttribute("SurfaceX")
+							local sy = pad:GetAttribute("SurfaceY")
+							local sz = pad:GetAttribute("SurfaceZ")
+							if typeof(sx) == "number" and typeof(sy) == "number" and typeof(sz) == "number" then
+								root.CFrame = CFrame.new(sx, sy, sz)
+							end
+						end)
+						return -- done
+					end
+				end
+			end
+			task.wait(2)
+		end
+	end)
 end
 
 function ResearchController:Start()
 	local gui = Instance.new("ScreenGui")
 	gui.Name = "ResearchUI"
 	gui.ResetOnSpawn = false
-	-- Same rule as the others: leave the Roblox topbar alone.
 	gui.ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets
 	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-	-- Above the build window (10), because it opens from a button that window
-	-- owns: opening it behind its own trigger reads as a dead button.
 	gui.DisplayOrder = 11
 	gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
 
@@ -187,18 +324,18 @@ function ResearchController:Start()
 	self._panel = panel
 	self:_buildToast(gui)
 
+	Players.LocalPlayer.CharacterAdded:Connect(function()
+		self._digTrack = nil
+		self._swinging = false
+	end)
+
 	panel.onSell = function(oreId: string?)
-		-- No optimistic update. The counts on screen come from the attributes
-		-- the server publishes, so the row empties when the sale actually
-		-- landed -- a local decrement would show a sale that failed.
 		Net.SellOres:InvokeServer(oreId)
 	end
 
 	local buildPanel = BuildController:Panel()
 	if buildPanel then
 		buildPanel.onResearchRequested = function()
-			-- Closing the build window first: both are modal and centred, and
-			-- stacked they read as one broken window.
 			if buildPanel:IsOpen() then
 				buildPanel:Close()
 			end
@@ -218,8 +355,6 @@ function ResearchController:Start()
 		if key == "HasResearchMine" then
 			panel:SetUnlocked(value == true)
 		elseif key == "Location" then
-			-- The dock the button sits in is hidden in the lobby, so a window
-			-- left open there could not be closed from its own trigger.
 			if value ~= "Station" then
 				panel:Close()
 			end
@@ -231,19 +366,7 @@ function ResearchController:Start()
 		end
 	end)
 
-	-- Known accepted rough edge, same one MiningController's own header
-	-- already flags for the Railgun: this InputBegan connection and
-	-- BuildController's own MouseButton1 handling are independent event
-	-- paths with no cross-controller coordination, so a click while both a
-	-- build tool is selected AND a vein happens to be under the cursor
-	-- fires both. Not reachable in practice -- the build grid and the pit
-	-- floor are never on screen at the same time -- so flagged here rather
-	-- than solved.
 	UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessed: boolean)
-		-- gameProcessed is true when the click was consumed by the
-		-- interface (the research panel, a menu button, ...): without this
-		-- check, closing a window with a click could also try to mine
-		-- whatever happened to be behind it.
 		if gameProcessed then
 			return
 		end
@@ -251,6 +374,8 @@ function ResearchController:Start()
 			self:_mine()
 		end
 	end)
+
+	self:_setupSurfaceTeleport()
 end
 
 return ResearchController

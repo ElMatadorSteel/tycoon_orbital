@@ -64,6 +64,7 @@ function SessionRegistry.new()
 		_nextAsteroidId = {} :: { [number]: number },
 		_researchMineBuilt = {} :: { [number]: boolean },
 		_veinCooldowns = {} :: { [number]: { [string]: number } },
+		_lastDig = {} :: { [number]: number },
 	}, SessionRegistry)
 end
 
@@ -159,6 +160,14 @@ function SessionRegistry:setLastVeinMine(userId: number, veinId: string, now: nu
 	cooldowns[veinId] = now
 end
 
+function SessionRegistry:lastDig(userId: number): number
+	return self._lastDig[userId] or -math.huge
+end
+
+function SessionRegistry:setLastDig(userId: number, now: number)
+	self._lastDig[userId] = now
+end
+
 -- Call on PlayerRemoving, once this is wired into a real bootstrap: nothing
 -- here should outlive the connection it belongs to.
 function SessionRegistry:release(userId: number)
@@ -171,6 +180,7 @@ function SessionRegistry:release(userId: number)
 	self._nextAsteroidId[userId] = nil
 	self._researchMineBuilt[userId] = nil
 	self._veinCooldowns[userId] = nil
+	self._lastDig[userId] = nil
 end
 
 return SessionRegistry

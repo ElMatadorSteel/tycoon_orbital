@@ -708,6 +708,27 @@ function StationSceneBuilder:hasResearchMine(userId: number): boolean
 	return self._mine[userId] ~= nil
 end
 
+-- Build the block grid inside an existing mine zone.
+function StationSceneBuilder:buildMineBlocks(userId: number, gridState: any): boolean
+	local zone = self._mine[userId]
+	local origin = self._origin[userId]
+	if not zone or not origin then
+		return false
+	end
+	local span = spanOf(self._config.gridRules)
+	ResearchMineBuilder.buildBlockGrid(zone, origin, span, gridState)
+	return true
+end
+
+-- Destroy a single block Part from the mine zone.
+function StationSceneBuilder:removeMineBlock(userId: number, layer: number, x: number, y: number)
+	local zone = self._mine[userId]
+	if not zone then
+		return
+	end
+	ResearchMineBuilder.removeBlock(zone, layer, x, y)
+end
+
 -- What a player who cannot afford it actually sees. The decision was taken
 -- by the use case; showing it is geometry, so it lands here.
 function StationSceneBuilder:refuseResearchMine(userId: number)

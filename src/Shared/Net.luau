@@ -30,6 +30,7 @@ local DEFINITIONS = {
 	-- MineVein does not accumulate an inventory, it mirrors FireRailgun's
 	-- own "claim a hit, get paid now" shape.
 	MineVein = "RemoteFunction",
+	DigBlock = "RemoteFunction",
 	-- Only ever bound server-side when Bootstrap was built in development
 	-- mode (see Container.luau's `development` flag) -- exist as Instances
 	-- either way, they just never receive an OnServerInvoke outside Studio.

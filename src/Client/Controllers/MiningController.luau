@@ -4,19 +4,11 @@
 --
 -- Free-aim, screen-center raycast: the client only ever CLAIMS which
 -- asteroid id it hit (Net.FireRailgun:InvokeServer(asteroidId)) -- the
--- server is sole judge of whether that claim pays out (see
--- Application/UseCases/FireRailgun's own header for why re-simulating the
--- camera geometry server-side isn't needed for that to be safe).
+-- server is sole judge of whether that claim pays out.
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 
--- fromShared(path) reaches ReplicatedStorage.Shared directly: Rojo maps
--- src/Client and src/Shared to different service roots with no common
--- ancestor a relative "../.." path can reach -- confirmed the first time
--- Rojo actually connected Studio (see CLAUDE.md's cutover notes). Lune has
--- no `game`, so the fallback below -- an ordinary relative require -- is
--- what actually runs there, unchanged from before.
 local function fromShared(path: string): any
 	if game then
 		local node: any = (game :: any):GetService("ReplicatedStorage").Shared
@@ -28,9 +20,11 @@ local function fromShared(path: string): any
 	return "../../Shared/" .. path
 end
 
+local Balance = require(fromShared("Balance"))
 local Net = require(fromShared("Net"))
 local Icons = require(fromShared("Icons"))
 local Theme = require("../UI/Theme")
+local WeaponSelector = require("../UI/WeaponSelector")
 
 local COLORS = Theme.Colors
 local SPACE = Theme.Space
@@ -46,10 +40,7 @@ local function getCamera(): Camera
 end
 
 ----------------------------------------------------------------------
--- Ephemeral toast -- same visual language as BuildPanel's own (icon +
--- label in a Theme.panel), rebuilt small and standalone here rather than
--- reaching into BuildController's private panel instance: too small a
--- piece to justify cross-controller coupling.
+-- Ephemeral toast -- same visual language as BuildPanel's own.
 
 function MiningController:_buildToast(gui: ScreenGui)
 	local icon = Theme.new("ImageLabel", {
@@ -73,7 +64,8 @@ function MiningController:_buildToast(gui: ScreenGui)
 	self._toast = Theme.panel({
 		Name = "MiningToast",
 		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -(SPACE.xl + 60 + SPACE.md)),
+		-- Lifted clear of the weapon selector, which owns the bottom centre.
+		Position = UDim2.new(0.5, 0, 1, -(SPACE.xl + Theme.Hotbar.Reserve + 60 + SPACE.md)),
 		Size = UDim2.fromOffset(440, Theme.Control.md),
 		Radius = Theme.Radius.md,
 		Visible = false,
@@ -180,6 +172,10 @@ function MiningController:_fire()
 	local ok, result = Net.FireRailgun:InvokeServer(asteroidId)
 	if ok then
 		self:_toastMessage(`+{result.reward} cr ({result.tier})`, false)
+		-- Only a SHOT THE SERVER ACCEPTED starts the cooldown read-out. A
+		-- refused shot spent nothing, and showing a sweep for it would teach
+		-- the player a rule the game does not have.
+		self._selector:BeginCooldown()
 	else
 		self:_toastMessage(tostring(result), true)
 	end
@@ -222,10 +218,8 @@ function MiningController:_scanForTool(container: Instance)
 end
 
 ----------------------------------------------------------------------
--- The purchase pad -- client-initiated (not server-Triggered like
--- LaunchPad): a purchase can fail (insufficient funds, already owned), and
--- only the client can show a toast for that, the same way every other
--- action in this game already works.
+-- The purchase pad -- client-initiated: a purchase can fail (insufficient
+-- funds, already owned), and only the client can show a toast for that.
 
 function MiningController:_bindPad()
 	local scenery = workspace:WaitForChild("Scenery")
@@ -252,6 +246,14 @@ function MiningController:Start()
 
 	self:_buildCrosshair(gui)
 	self:_buildToast(gui)
+
+	-- The hotbar. It reads the Backpack itself, so it needs telling only the
+	-- two things it cannot know: how long the cooldown lasts, and what to draw
+	-- when a tool carries no TextureId of its own.
+	self._selector = WeaponSelector.new(gui, {
+		Cooldown = Balance.Mining.Railgun.Cooldown,
+		FallbackImage = Icons.Stats["Rocket"],
+	})
 
 	self:_bindPad()
 

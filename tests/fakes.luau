@@ -136,6 +136,30 @@ function RecordingSceneBuilder:setModuleLevel(userId: number, x: number, y: numb
 	table.insert(self.levelCalls, { userId = userId, x = x, y = y, level = level })
 end
 
+function RecordingSceneBuilder:buildResearchMine(_userId: number): boolean
+	return true
+end
+
+function RecordingSceneBuilder:hasResearchMine(_userId: number): boolean
+	return false
+end
+
+function RecordingSceneBuilder:refuseResearchMine(_userId: number) end
+
+function RecordingSceneBuilder:buildMineBlocks(_userId: number, _gridState: any): boolean
+	return true
+end
+
+function RecordingSceneBuilder:removeMineBlock(_userId: number, _layer: number, _x: number, _y: number) end
+
+function RecordingSceneBuilder:grantShovel(_userId: number): boolean
+	return true
+end
+
+function RecordingSceneBuilder:markShovelUnlocked(_userId: number) end
+
+function RecordingSceneBuilder:refuseShovel(_userId: number) end
+
 -- A recording AsteroidField: doesn't touch any Instance (there is none
 -- under Lune), just records every call so a test can assert RunMiningTick/
 -- FireRailgun invoked the right one.

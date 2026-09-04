@@ -25,6 +25,19 @@ export type Rules = {
 -- the state of a module never upgraded. No migration needed either way.
 export type SavedModule = { id: string, x: number, y: number, r: number, lv: number }
 
+-- The persisted state of the research mine's digging grid. Generated
+-- randomly, regenerated every Balance.Research.RegenInterval seconds.
+-- Between regenerations the dug/ore state survives disconnections.
+export type SavedMine = {
+	generatedAt: number,
+	layers: {
+		{
+			ores: { [string]: string }, -- cellKey → ore id
+			dug: { [string]: boolean }, -- cellKey → true
+		}
+	},
+}
+
 export type Profile = {
 	version: number,
 	credits: number,
@@ -38,6 +51,8 @@ export type Profile = {
 	-- only because it is earned, not derived: a disconnection must not empty
 	-- a bag the player spent time filling.
 	ores: { [string]: number },
+	-- The digging grid state, nil until the mine is first generated.
+	mine: SavedMine?,
 	rebirths: number,
 	playtime: number,
 	savedAt: number,
@@ -103,6 +118,44 @@ function Profile.sanitize(raw: any, rules: Rules): Profile
 				if count > 0 then
 					profile.ores[key] = count
 				end
+			end
+		end
+	end
+
+	-- The mine grid state. Validated structurally but NOT checked against
+	-- the current layer config: a save can outlive a layer-count change,
+	-- and the use case that loads the mine will regenerate it if stale.
+	if typeof(raw.mine) == "table" then
+		local mine = raw.mine
+		local genAt = number(mine.generatedAt, 0)
+		if genAt > 0 and typeof(mine.layers) == "table" then
+			local sanitizedLayers = {}
+			for i, layer in mine.layers do
+				if typeof(layer) == "table" then
+					local ores: { [string]: string } = {}
+					local dug: { [string]: boolean } = {}
+					if typeof(layer.ores) == "table" then
+						for k, v in layer.ores do
+							if typeof(k) == "string" and typeof(v) == "string" then
+								ores[k] = v
+							end
+						end
+					end
+					if typeof(layer.dug) == "table" then
+						for k, v in layer.dug do
+							if typeof(k) == "string" and v == true then
+								dug[k] = true
+							end
+						end
+					end
+					sanitizedLayers[i] = { ores = ores, dug = dug }
+				end
+			end
+			if #sanitizedLayers > 0 then
+				profile.mine = {
+					generatedAt = genAt,
+					layers = sanitizedLayers,
+				}
 			end
 		end
 	end

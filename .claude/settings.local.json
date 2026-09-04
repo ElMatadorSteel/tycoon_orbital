@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rtk:*)",
+      "Bash(.tools/lune run:*)",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File scripts/test.ps1 research)",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File scripts/setup.ps1)",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File scripts/test.ps1)",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File scripts/check.ps1)",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File scripts/check.ps1 -Fix)"
+    ]
+  }
+}

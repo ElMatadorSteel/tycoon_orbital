@@ -127,25 +127,58 @@ local Balance = {
 	-- StationSceneBuilder and the layout jitter does in Domain/Plots/Layout.
 	Research = {
 		Mine = {
-			-- Three times the Railgun, and a few production ticks past the
-			-- first couple of upgrades: the pad should be visible from the
-			-- first minute and affordable from the tenth, so it reads as the
-			-- next goal rather than as scenery.
 			Cost = 2500,
 		},
 		Shovel = {
-			-- Well under the mine that contains it. Its pad stands INSIDE the
-			-- zone you already paid 2500 to open, so it reads as the second
-			-- half of one purchase rather than as a second gate of the same
-			-- size -- and a player who walked all the way to the pit floor
-			-- should not have to walk back out and grind again.
 			Cost = 900,
 		},
-		Vein = {
-			-- Slower than the Railgun's 1.5s: a vein is a fixture you return
-			-- to again and again rather than a target that flies past, so the
-			-- pace has to feel like digging, not like shooting.
-			Cooldown = 4,
+		-- Per-dig cooldown: how long between two consecutive digs on any
+		-- block. Shorter than the old per-vein cooldown (4s) because
+		-- blocks are disposable (dug once, gone), not fixtures.
+		DigCooldown = 1,
+		Backpack = {
+			Capacity = 50,
+		},
+		-- How often the entire mine regenerates with a fresh random grid,
+		-- in seconds. 6 hours. Epoch-based: the generation timestamp is
+		-- persisted, so a player who reconnects within the window keeps
+		-- their progress; one who returns after it gets a new grid.
+		RegenInterval = 21600,
+		-- Per-layer configuration. Index = depth (1 = shallowest).
+		-- density: fraction of cells containing ore (0..1).
+		-- pool: weighted ore distribution for that layer.
+		Layers = {
+			{
+				width = 8,
+				depth = 8,
+				density = 0.25,
+				pool = {
+					{ id = "Iron", weight = 80 },
+					{ id = "Copper", weight = 20 },
+				},
+			},
+			{
+				width = 8,
+				depth = 8,
+				density = 0.20,
+				pool = {
+					{ id = "Iron", weight = 40 },
+					{ id = "Copper", weight = 30 },
+					{ id = "Titanium", weight = 30 },
+				},
+			},
+			{
+				width = 8,
+				depth = 8,
+				density = 0.15,
+				pool = {
+					{ id = "Iron", weight = 20 },
+					{ id = "Copper", weight = 20 },
+					{ id = "Titanium", weight = 25 },
+					{ id = "Iridium", weight = 25 },
+					{ id = "Etherite", weight = 10 },
+				},
+			},
 		},
 	},
 

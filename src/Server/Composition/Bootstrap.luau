@@ -222,7 +222,13 @@ function Bootstrap.start()
 			asteroidLifetime = Balance.Mining.Railgun.AsteroidLifetime,
 			researchMine = { cost = Balance.Research.Mine.Cost },
 			shovel = { cost = Balance.Research.Shovel.Cost },
-			vein = { cooldown = Balance.Research.Vein.Cooldown },
+			vein = { cooldown = Balance.Research.DigCooldown },
+			mineGrid = {
+				regenInterval = Balance.Research.RegenInterval,
+				layers = Balance.Research.Layers,
+			},
+			backpackCapacity = Balance.Research.Backpack.Capacity,
+			digCooldown = Balance.Research.DigCooldown,
 		},
 		development = RunService:IsStudio(),
 	})

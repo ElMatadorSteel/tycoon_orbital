@@ -35,6 +35,7 @@ local AsteroidTiers = require(fromShared("Domain/Mining/AsteroidTiers"))
 local ResearchMine = require(fromShared("Domain/Research/ResearchMine"))
 local Shovel = require(fromShared("Domain/Research/Shovel"))
 local Vein = require(fromShared("Domain/Research/Vein"))
+local MineGrid = require(fromShared("Domain/Research/MineGrid"))
 local SpendCredits = require("../Application/UseCases/SpendCredits")
 local AddCredits = require("../Application/UseCases/AddCredits")
 local PlaceModule = require("../Application/UseCases/PlaceModule")
@@ -61,6 +62,7 @@ local UnlockShovel = require("../Application/UseCases/UnlockShovel")
 local SellOres = require("../Application/UseCases/SellOres")
 local DevGiveOres = require("../Application/UseCases/DevGiveOres")
 local DevSetWalkSpeed = require("../Application/UseCases/DevSetWalkSpeed")
+local DigBlock = require("../Application/UseCases/DigBlock")
 
 export type Ports = {
 	profileRepository: any, -- Ports.ProfileRepository
@@ -95,6 +97,9 @@ export type Rules = {
 	researchMine: ResearchMine.Rules,
 	shovel: Shovel.Rules,
 	vein: Vein.Rules,
+	mineGrid: MineGrid.Rules,
+	backpackCapacity: number,
+	digCooldown: number,
 }
 
 export type Container = {
@@ -126,6 +131,7 @@ export type Container = {
 		unlockShovel: any,
 		restoreResearchMine: any,
 		mineVein: any,
+		digBlock: any,
 		sellOres: any,
 		devGiveOres: any?,
 	},
@@ -166,6 +172,9 @@ function Container.new(
 	local restoreResearchMine = setmetatable({
 		profileRepository = ports.profileRepository,
 		sceneBuilder = ports.sceneBuilder,
+		clock = ports.clock,
+		gridRules = rules.mineGrid,
+		random = math.random,
 	}, RestoreResearchMine)
 
 	-- Each use case gets its OWN dependency table, built fresh here rather
@@ -309,6 +318,18 @@ function Container.new(
 			clock = ports.clock,
 			veinRules = rules.vein,
 		}, MineVein),
+
+		digBlock = setmetatable({
+			profileRepository = ports.profileRepository,
+			sessionRegistry = sessionRegistry,
+			statsPublisher = ports.statsPublisher,
+			clock = ports.clock,
+			sceneBuilder = ports.sceneBuilder,
+			gridRules = rules.mineGrid,
+			backpackCapacity = rules.backpackCapacity,
+			digCooldown = rules.digCooldown,
+			random = math.random,
+		}, DigBlock),
 
 		unlockShovel = setmetatable({
 			profileRepository = ports.profileRepository,

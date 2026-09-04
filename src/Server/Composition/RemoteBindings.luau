@@ -85,6 +85,10 @@ function RemoteBindings.bind(container: any)
 		return respond(container.useCases.mineVein:run(player.UserId, veinId))
 	end
 
+	Net.DigBlock.OnServerInvoke = function(player: Player, layer: number, x: number, y: number)
+		return respond(container.useCases.digBlock:run(player.UserId, layer, x, y))
+	end
+
 	-- oreId is optional -- nil sells the whole bag. Passed straight through
 	-- rather than defaulted here: SellOres type-checks it itself, which is
 	-- where that check belongs when the caller may not be our client.

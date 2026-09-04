@@ -474,7 +474,7 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 		Name = "Recherche",
 		LayoutOrder = 3,
 		Color = FUNCTION.Research,
-		Image = Icons.Gems["GemIcon"],
+		Image = Icons.Menus["Inventory"],
 		Bare = true,
 	})
 	self._researchButton.Root.Parent = self._dockLeft
@@ -1181,6 +1181,11 @@ end
 -- How many rebirths are banked, shown on the tally beside the bare button.
 function BuildPanel:SetRebirths(count: number)
 	self._rebirthButton:SetCounter(tostring(count))
+end
+
+function BuildPanel:SetUltimateOwned(_owned: boolean)
+	-- Stub: the Ultimate badge/indicator is not yet wired into the panel UI.
+	-- Exists so BuildController:Start doesn't crash when it reads HasUltimate.
 end
 
 function BuildPanel:SetAvailable(available: boolean)
