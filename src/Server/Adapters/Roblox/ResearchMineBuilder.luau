@@ -126,10 +126,11 @@ local STAIR_ANGLE = math.pi
 -- and the research post (90), with the widest gap it can get from both.
 local SHOVEL_ANGLE = 145
 
--- Block grid: 8x8 cells per layer, 3 layers stacked downward from the pit
--- floor. Sized so the full grid fits inside FLOOR_RADIUS (8 * 3.5 = 28).
+-- Block grid: 16x16 cells per layer, 3 layers stacked downward from the pit
+-- floor. Only cells whose centre falls inside FLOOR_RADIUS are built, so
+-- the square grid is masked into a disc that fills the circular pit floor.
 local BLOCK_SIZE = 3.5
-local GRID_CELLS = 8
+local GRID_CELLS = 16
 local BLOCK_GAP = 0 -- flush: no seam between blocks for a uniform surface
 
 local PALETTE = {
@@ -838,11 +839,24 @@ local function buildBlockGrid(
 	local baseX = -gridSpan / 2
 	local baseZ = centreZ - gridSpan / 2
 
+	-- The grid is a square, but the pit floor is circular. Only blocks
+	-- whose centre falls inside FLOOR_RADIUS are built; the rest are
+	-- simply absent (the domain still considers them valid cells, but
+	-- with no physical block the player can never click them).
+	local halfSpan = gridSpan / 2
+
 	for layerIndex, layerState in gridState.layers do
 		local layerY = FLOOR_TOP - (layerIndex - 1) * BLOCK_SIZE
 
 		for cellY = 0, GRID_CELLS - 1 do
 			for cellX = 0, GRID_CELLS - 1 do
+				-- Circle mask: measure from the grid's own centre.
+				local dx = (cellX + 0.5) * BLOCK_SIZE - halfSpan
+				local dz = (cellY + 0.5) * BLOCK_SIZE - halfSpan
+				if dx * dx + dz * dz > FLOOR_RADIUS * FLOOR_RADIUS then
+					continue -- outside the disc
+				end
+
 				local key = `{cellX},{cellY}`
 				if layerState.dug[key] then
 					continue -- already broken

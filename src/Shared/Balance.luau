@@ -157,8 +157,8 @@ local Balance = {
 		-- pool: weighted ore distribution for that layer.
 		Layers = {
 			{
-				width = 8,
-				depth = 8,
+				width = 16,
+				depth = 16,
 				density = 0.25,
 				pool = {
 					{ id = "Iron", weight = 80 },
@@ -166,8 +166,8 @@ local Balance = {
 				},
 			},
 			{
-				width = 8,
-				depth = 8,
+				width = 16,
+				depth = 16,
 				density = 0.20,
 				pool = {
 					{ id = "Iron", weight = 40 },
@@ -176,8 +176,8 @@ local Balance = {
 				},
 			},
 			{
-				width = 8,
-				depth = 8,
+				width = 16,
+				depth = 16,
 				density = 0.15,
 				pool = {
 					{ id = "Iron", weight = 20 },

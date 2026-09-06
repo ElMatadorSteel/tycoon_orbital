@@ -130,6 +130,7 @@ function DevPanel.new(parent: ScreenGui): DevPanel
 	-- nil speed means "back to normal" -- the default lives in Balance, not
 	-- in this view.
 	self.onSetWalkSpeed = nil :: ((speed: number?) -> ())?
+	self.onSetDigSpeed = nil :: ((seconds: number?) -> ())?
 
 	self._open = false
 
@@ -174,6 +175,16 @@ function DevPanel.new(parent: ScreenGui): DevPanel
 	self._speedBox = textBox("SpeedBox", "Vitesse de marche")
 	local applySpeed = actionButton("ApplySpeed", "Appliquer", COLORS.Valid)
 	local resetSpeed = actionButton("ResetSpeed", "Vitesse normale", COLORS.MenuInner)
+
+	local digLabel = sectionLabel("VITESSE DE MINAGE")
+	self._digCurrent = Theme.caption({
+		Size = UDim2.new(1, 0, 0, 16),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Text = "Durée : normale",
+	})
+	self._digBox = textBox("DigBox", "Durée par bloc (secondes)")
+	local applyDig = actionButton("ApplyDig", "Appliquer", COLORS.Valid)
+	local resetDig = actionButton("ResetDig", "Vitesse normale", COLORS.MenuInner)
 
 	local rebirthsLabel = sectionLabel("RENAISSANCES")
 	self._rebirthsCurrent = Theme.caption({
@@ -226,6 +237,11 @@ function DevPanel.new(parent: ScreenGui): DevPanel
 		self._speedBox,
 		applySpeed.Root,
 		resetSpeed.Root,
+		digLabel,
+		self._digCurrent,
+		self._digBox,
+		applyDig.Root,
+		resetDig.Root,
 		rebirthsLabel,
 		self._rebirthsCurrent,
 		self._rebirthsBox,
@@ -303,6 +319,21 @@ function DevPanel.new(parent: ScreenGui): DevPanel
 	resetSpeed.Face.Activated:Connect(function()
 		if self.onSetWalkSpeed then
 			self.onSetWalkSpeed(nil)
+		end
+	end)
+
+	applyDig.Face.Activated:Connect(function()
+		local seconds = tonumber(self._digBox.Text)
+		if not seconds then
+			return
+		end
+		if self.onSetDigSpeed then
+			self.onSetDigSpeed(seconds)
+		end
+	end)
+	resetDig.Face.Activated:Connect(function()
+		if self.onSetDigSpeed then
+			self.onSetDigSpeed(nil)
 		end
 	end)
 
@@ -430,6 +461,10 @@ end
 -- ignored.
 function DevPanel:SetWalkSpeed(speed: number)
 	self._speedCurrent.Text = `Vitesse : {speed}`
+end
+
+function DevPanel:SetDigSpeed(seconds: number)
+	self._digCurrent.Text = `Durée : {seconds}s`
 end
 
 return DevPanel

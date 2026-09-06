@@ -27,6 +27,7 @@ end
 local Net = require(fromShared("Net"))
 local State = require("../State")
 local DevPanel = require("../UI/DevPanel")
+local ResearchController = require("./ResearchController")
 
 local DevController = {}
 
@@ -76,6 +77,10 @@ function DevController:Start()
 		if ok then
 			panel:SetWalkSpeed(applied :: number)
 		end
+	end
+	panel.onSetDigSpeed = function(seconds: number?)
+		ResearchController:SetDigDuration(seconds)
+		panel:SetDigSpeed(ResearchController:GetDigDuration())
 	end
 
 	State.Changed:Connect(function(key: string, value: any)

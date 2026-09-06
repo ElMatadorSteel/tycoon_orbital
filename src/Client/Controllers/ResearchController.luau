@@ -33,6 +33,7 @@ local SPACE = Theme.Space
 local MAX_HIT_DISTANCE = 1000
 
 -- How long one block takes to break under an unbroken hold.
+-- Mutable: DevController can override this at runtime for testing.
 local DIG_SECONDS = Balance.Research.DigDuration
 
 -- The progress ring.
@@ -667,6 +668,14 @@ function ResearchController:Start()
 			task.wait(0.5)
 		end
 	end)
+end
+
+function ResearchController:SetDigDuration(seconds: number?)
+	DIG_SECONDS = seconds or Balance.Research.DigDuration
+end
+
+function ResearchController:GetDigDuration(): number
+	return DIG_SECONDS
 end
 
 return ResearchController
