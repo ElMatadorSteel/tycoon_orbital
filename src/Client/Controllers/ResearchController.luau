@@ -61,6 +61,13 @@ local RING_TRACK_TRANSPARENCY = 0.55
 local RING_RIM = 3
 local RING_RIM_TRANSPARENCY = 0.35
 
+-- Block highlight: a SelectionBox drawn around the block being dug.
+-- SelectionBox respects depth testing, so it only shows on blocks the
+-- player can actually see -- unlike Highlight which bleeds through.
+local HIGHLIGHT_COLOR = Theme.Function.Research
+local HIGHLIGHT_LINE_THICKNESS = 0.06
+local HIGHLIGHT_SURFACE_TRANSPARENCY = 0.85
+
 local ResearchController = {}
 
 local function getCamera(): Camera
@@ -345,6 +352,29 @@ function ResearchController:_buildDigRing(gui: ScreenGui)
 	self._digSweepRight = ringSweep(root, true)
 	self._digSweepLeft = ringSweep(root, false)
 	self._digRing = root
+
+	-- Reusable SelectionBox, reparented to the current target block.
+	local box = Instance.new("SelectionBox")
+	box.Name = "DigHighlight"
+	box.Color3 = HIGHLIGHT_COLOR
+	box.LineThickness = HIGHLIGHT_LINE_THICKNESS
+	box.SurfaceColor3 = HIGHLIGHT_COLOR
+	box.SurfaceTransparency = HIGHLIGHT_SURFACE_TRANSPARENCY
+	self._highlight = box
+end
+
+function ResearchController:_highlightBlock(block: BasePart?)
+	local box = self._highlight
+	if not box then
+		return
+	end
+	if block then
+		box.Adornee = block
+		box.Parent = block
+	else
+		box.Adornee = nil
+		box.Parent = nil
+	end
 end
 
 function ResearchController:_showDigRing(mouseX: number, mouseY: number, ratio: number)
@@ -377,6 +407,10 @@ function ResearchController:_beginDig()
 	if self._digHolding then
 		return
 	end
+	local character = Players.LocalPlayer.Character
+	if not character or not character:FindFirstChild(SHOVEL_NAME) then
+		return
+	end
 	self._digHolding = true
 
 	-- A token, not just the flag: a release followed immediately by a press
@@ -401,6 +435,7 @@ function ResearchController:_beginDig()
 				progress = 0
 				nextSwing = 0
 				self:_hideDigRing()
+				self:_highlightBlock(target)
 			end
 			if not target then
 				continue
@@ -424,12 +459,14 @@ function ResearchController:_beginDig()
 		end
 
 		self:_hideDigRing()
+		self:_highlightBlock(nil)
 	end)
 end
 
 function ResearchController:_stopDig()
 	self._digHolding = false
 	self:_hideDigRing()
+	self:_highlightBlock(nil)
 end
 
 ----------------------------------------------------------------------
