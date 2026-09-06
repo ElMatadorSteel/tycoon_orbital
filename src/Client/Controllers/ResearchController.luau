@@ -31,6 +31,8 @@ local BuildController = require("./BuildController")
 local COLORS = Theme.Colors
 local SPACE = Theme.Space
 local MAX_HIT_DISTANCE = 1000
+-- Maximum reach: how far from the character a block can be to start a dig.
+local MAX_DIG_REACH = 17.5 -- ~5 blocks (5 × 3.5 studs)
 
 -- How long one block takes to break under an unbroken hold.
 -- Mutable: DevController can override this at runtime for testing.
@@ -156,6 +158,12 @@ function ResearchController:_blockAtMouse(mouseX: number, mouseY: number): BaseP
 
 	local hit = result.Instance
 	if not hit:IsA("BasePart") then
+		return nil
+	end
+
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if root and (result.Position - root.Position).Magnitude > MAX_DIG_REACH then
 		return nil
 	end
 
