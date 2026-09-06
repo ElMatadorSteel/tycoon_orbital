@@ -142,7 +142,7 @@ function ResearchController:_blockAtMouse(mouseX: number, mouseY: number): BaseP
 	end
 
 	local camera = getCamera()
-	local ray = camera:ViewportPointToRay(mouseX, mouseY)
+	local ray = camera:ScreenPointToRay(mouseX, mouseY)
 
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Include
