@@ -37,6 +37,7 @@ end
 
 local Balance = require(fromShared("Balance"))
 local Icons = require(fromShared("Icons"))
+local UIPack = require(fromShared("UIPack"))
 local ModuleCatalog = require(fromShared("Domain/Station/ModuleCatalog"))
 local ModuleGeometry = require(fromShared("ModuleGeometry"))
 local ModuleVisuals = require("./ModuleVisuals")
@@ -474,6 +475,8 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 		Name = "Recherche",
 		LayoutOrder = 3,
 		Color = FUNCTION.Research,
+		-- A backpack, not a gem: what this opens is the bag of what the mine
+		-- has produced, and the gem glyph promised a shop.
 		Image = Icons.Menus["Inventory"],
 		Bare = true,
 	})
@@ -526,37 +529,24 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 		}),
 	})
 
-	local titleLeft = TITLE_ICON + SPACE.md
-
-	local title = Theme.new("TextLabel", {
-		Name = "Title",
-		Position = UDim2.fromOffset(titleLeft, 0),
-		Size = UDim2.new(1, -(titleLeft + Theme.Control.md + SPACE.md), 0, TITLE_HEIGHT),
-		BackgroundTransparency = 1,
-		Font = Theme.Font.Display,
-		TextSize = Theme.TextSize.display,
-		TextColor3 = COLORS.Text,
-		TextXAlignment = Enum.TextXAlignment.Left,
+	-- The name has moved OUT of the frame, onto the pack's bandeau straddling
+	-- the top edge -- the same nameplate the research window wears, so the two
+	-- menus read as one product.
+	--
+	-- The rule that used to run from the end of the word out to the close
+	-- button went with it. Its whole job was to turn a line of text into a
+	-- header BAR; a nameplate is already one, and a rule under it would be the
+	-- boundary drawn twice.
+	--
+	-- Purple at the sprite's own saturation, because it is the window's own
+	-- colour and these bars do not take a tint (see UIPack).
+	local titleBar = Theme.titleBar({
+		Name = "TitleBar",
+		Image = UIPack.Bar.Purple,
 		Text = Theme.Words.BuildTitle,
-	}, { Theme.textStroke(Theme.Line.base) })
-
-	local rule = Theme.new("Frame", {
-		Name = "Rule",
-		AnchorPoint = Vector2.new(0, 0.5),
-		Size = UDim2.fromOffset(0, Theme.Line.base),
-		BackgroundColor3 = Theme.darken(COLORS.Menu, 0.4),
-	}, { Theme.corner(Theme.Line.base) })
-
-	-- Driven off the rendered width rather than a guessed one: TextBounds is
-	-- the only thing that knows how wide "CONSTRUCTION" actually came out in
-	-- this font at this size, and the rule has to start where the word ends.
-	local function fitRule()
-		local start = titleLeft + title.TextBounds.X + SPACE.md
-		rule.Position = UDim2.fromOffset(start, TITLE_HEIGHT / 2)
-		rule.Size = UDim2.new(1, -(start + Theme.Control.md + SPACE.md), 0, Theme.Line.base)
-	end
-	title:GetPropertyChangedSignal("TextBounds"):Connect(fitRule)
-	fitRule()
+		Position = UDim2.new(0.5, 0, 0, -SPACE.xl),
+		Overhang = SPACE.xl + 6,
+	})
 
 	-- CENTRED across the window, like the reference's two lines under its
 	-- header. Left-aligned it read as a third item in the header row; centred
@@ -586,8 +576,9 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 	end
 
 	local tabsTop = TITLE_HEIGHT + SPACE.xs + SUBTITLE_HEIGHT + SPACE.md
-	local tabWidth =
-		math.floor((PANEL.X - SPACE.xl * 2 - SPACE.sm * (#categories - 1)) / #categories)
+	local tabWidth = math.floor(
+		(PANEL.X - SPACE.xl * 2 - SPACE.sm * (#categories - 1)) / #categories
+	)
 
 	local tabBar = Theme.new("Frame", {
 		Name = "Tabs",
@@ -604,6 +595,11 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 		}),
 	})
 
+	-- The one square face in the pack, used for the one square button in the
+	-- window -- it is the close button of the pack's own menus, and it is worn
+	-- untinted: the pink is in its pixels, and it is close enough to Demolish
+	-- that the colour still says what the button does. The Demolish underneath
+	-- is what gets painted if the sprite is ever moderated away.
 	self._close = Theme.chunky({
 		AnchorPoint = Vector2.new(1, 0),
 		Position = UDim2.fromScale(1, 0),
@@ -611,6 +607,8 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 		BackgroundColor3 = FUNCTION.Demolish,
 		Radius = Theme.Radius.md,
 		Inner = true,
+		Plate = UIPack.Square.Pink,
+		PlateTint = false,
 	}, {
 		image(Icons.Misc["Deny"], {
 			AnchorPoint = Vector2.new(0.5, 0.5),
@@ -673,9 +671,8 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 		Parent = parent,
 	}, {
 		Theme.padding(SPACE.xl),
-		rule,
+		titleBar.Root,
 		titleIcon,
-		title,
 		subtitle,
 		self._close.Root,
 		tabBar,
@@ -949,7 +946,7 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 
 	self._confirmBody = Theme.prose({
 		Position = UDim2.fromOffset(0, CONFIRM_ICON + SPACE.md),
-		Size = UDim2.fromScale(1, 0),
+		Size = UDim2.new(1, 0, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		TextWrapped = true,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -961,24 +958,34 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 		Size = UDim2.fromScale(1, 1),
 		Text = "Annuler",
 	})
+	-- Silver, at the sprite's own colour: the way OUT of a destructive dialog
+	-- should not be shouting a colour of its own next to the button that goes
+	-- through with it.
 	self._confirmCancel = Theme.chunky({
 		Size = UDim2.fromOffset(150, Theme.Control.md),
 		BackgroundColor3 = COLORS.MenuInner,
 		Radius = Theme.Radius.md,
 		Inner = true,
+		Plate = UIPack.Plate.Neutral,
+		PlateTint = false,
 	}, { confirmCancelLabel })
 
 	local confirmOkLabel = Theme.body({
 		Size = UDim2.fromScale(1, 1),
 		Text = "Confirmer",
 	})
+	-- The one button in the interface that MUST be tinted rather than given a
+	-- coloured sprite: `confirmColor` changes per action, so the colour is not
+	-- known here. The neutral plate is the one that survives being recoloured
+	-- from the outside, and SetColor repaints it along with the face.
 	self._confirmOk = Theme.chunky({
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.fromScale(1, 0),
+		Position = UDim2.new(1, 0, 0, 0),
 		Size = UDim2.fromOffset(150, Theme.Control.md),
 		BackgroundColor3 = FUNCTION.Rebirth,
 		Radius = Theme.Radius.md,
 		Inner = true,
+		Plate = UIPack.Plate.Neutral,
 	}, { confirmOkLabel })
 
 	local confirmButtons = Theme.new("Frame", {

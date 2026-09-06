@@ -83,7 +83,10 @@ local TERRACES = {
 	{ outer = 44, inner = 24, top = WALK_Y - TERRACE_DROP * 2 },
 }
 local FLOOR_RADIUS = 28
-local FLOOR_THICKNESS = 12
+-- The block grid replaces the old solid pit floor. FLOOR_THICKNESS is the
+-- vertical extent the grid occupies (3 layers × BLOCK_SIZE), used only by
+-- the stair builder to know where the underside sits.
+local FLOOR_THICKNESS = 3 * 3.5 -- 3 layers × BLOCK_SIZE
 local FLOOR_TOP = WALK_Y - TERRACE_DROP * 3
 
 -- Relief between neighbouring ring segments. Keyed off the segment INDEX, not
@@ -127,7 +130,7 @@ local SHOVEL_ANGLE = 145
 -- floor. Sized so the full grid fits inside FLOOR_RADIUS (8 * 3.5 = 28).
 local BLOCK_SIZE = 3.5
 local GRID_CELLS = 8
-local BLOCK_GAP = 0.08 -- hairline gap so adjacent blocks don't z-fight
+local BLOCK_GAP = 0 -- flush: no seam between blocks for a uniform surface
 
 local PALETTE = {
 	Rock = Color3.fromRGB(84, 78, 74),
@@ -171,6 +174,144 @@ end
 
 local function colourOf(ore: Ore): Color3
 	return Color3.fromRGB(ore.colour.R, ore.colour.G, ore.colour.B)
+end
+
+----------------------------------------------------------------------
+-- Ore decorations: Minecraft-style mineral fragments embedded in rock.
+-- The block keeps its Slate/rock base; small flat coloured patches sit
+-- flush on the top face so the player reads "rock with bits of ore in
+-- it" at a glance.
+--
+-- Fragment colour = ore's own colour (what it IS).
+-- Glow colour = rarity ring colour from the backpack UI (how RARE it
+-- is). Duplicated here because the server cannot require a client
+-- Theme module; kept in sync manually with Client/UI/Theme.Rarity.
+
+local RARITY_GLOW: { [string]: Color3 } = {
+	Common = Color3.fromRGB(150, 160, 190),
+	Rare = Color3.fromRGB(78, 176, 255),
+	Epic = Color3.fromRGB(190, 110, 255),
+	Legendary = Color3.fromRGB(255, 170, 60),
+	Mythic = Color3.fromRGB(255, 90, 140),
+}
+
+-- Flat mineral fragments on the top face of a block. Each is a thin
+-- box sitting flush, coloured with the ore's own colour so it reads as
+-- "bits of mineral inside rock", like Minecraft ore textures.
+local function decorateFragments(block: BasePart, colour: Color3, count: number, neon: boolean)
+	local s = block.Size.X
+	for i = 1, count do
+		local frag = Instance.new("Part")
+		frag.Name = "Fragment"
+		frag.Shape = Enum.PartType.Block
+		frag.Anchored = true
+		frag.CanCollide = false
+		frag.CanQuery = false
+		frag.CanTouch = false
+		frag.CastShadow = false
+		frag.Material = if neon then Enum.Material.Neon else Enum.Material.SmoothPlastic
+		frag.Color = colour
+
+		-- Irregular small patch: width/depth vary, height is paper-thin
+		local w = s * (0.15 + hash(i, count) * 0.15)
+		local d = s * (0.12 + hash(i + 3, count) * 0.12)
+		local h = 0.12
+		frag.Size = Vector3.new(w, h, d)
+
+		-- Scatter across the top face within ±0.35 of centre
+		local ox = (hash(i + 1, count) - 0.5) * s * 0.7
+		local oz = (hash(i + 2, count) - 0.5) * s * 0.7
+		-- Sit flush: block top is at +s/2, fragment centre at +s/2 + h/2
+		frag.CFrame = block.CFrame * CFrame.new(ox, s / 2 + h / 2, oz)
+			* CFrame.Angles(0, hash(i + 4, count) * math.pi, 0)
+
+		local weld = Instance.new("WeldConstraint")
+		weld.Part0 = block
+		weld.Part1 = frag
+		weld.Parent = frag
+		frag.Parent = block
+	end
+end
+
+-- Glow light attached to the block, coloured by RARITY (not ore).
+local function decorateGlow(block: BasePart, colour: Color3, range: number, brightness: number)
+	local light = Instance.new("PointLight")
+	light.Color = colour
+	light.Range = range
+	light.Brightness = brightness
+	light.Parent = block
+end
+
+-- Sparkle particles rising from the block, coloured by RARITY.
+local function decorateParticles(block: BasePart, colour: Color3, rate: number)
+	local emitter = Instance.new("ParticleEmitter")
+	emitter.Color = ColorSequence.new(colour)
+	emitter.Size = NumberSequence.new(0.15)
+	emitter.Lifetime = NumberRange.new(0.6, 1.2)
+	emitter.Rate = rate
+	emitter.Speed = NumberRange.new(0.5, 1.5)
+	emitter.SpreadAngle = Vector2.new(30, 30)
+	emitter.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.3),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	emitter.LightEmission = 1
+	emitter.LightInfluence = 0
+	emitter.Parent = block
+end
+
+-- Minecraft-style ore block: rock base with coloured mineral fragments.
+-- Each rarity tier adds more fragments and stronger effects so the
+-- player can read rarity at a glance:
+--   Common     — 3 fragments, no glow
+--   Rare       — 4 fragments, subtle glow
+--   Epic       — 5 neon fragments, glow
+--   Legendary  — 6 neon fragments, bright glow + sparkles
+--   Mythic     — 8 neon fragments, strong glow + sparkles + aura
+local function decorateOreBlock(block: BasePart, ore: Ore)
+	local oreColour = colourOf(ore)
+	local rarity = ore.rarity
+	local glowColour = RARITY_GLOW[rarity] or RARITY_GLOW.Common
+
+	-- All ore blocks keep the rock base with a subtle tint
+	block.Color = PALETTE.Rock:Lerp(oreColour, 0.15)
+
+	if rarity == "Common" then
+		decorateFragments(block, oreColour, 3, false)
+	elseif rarity == "Rare" then
+		decorateFragments(block, oreColour, 4, false)
+		decorateGlow(block, glowColour, 6, 0.5)
+	elseif rarity == "Epic" then
+		decorateFragments(block, oreColour, 5, true)
+		decorateGlow(block, glowColour, 8, 0.8)
+	elseif rarity == "Legendary" then
+		decorateFragments(block, oreColour, 6, true)
+		decorateGlow(block, glowColour, 12, 1.4)
+		decorateParticles(block, glowColour, 5)
+	elseif rarity == "Mythic" then
+		decorateFragments(block, oreColour, 8, true)
+		decorateGlow(block, glowColour, 18, 2.5)
+		decorateParticles(block, glowColour, 10)
+		-- Soft rising aura in the rarity colour
+		local aura = Instance.new("ParticleEmitter")
+		aura.Color = ColorSequence.new(glowColour)
+		aura.Size = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0),
+			NumberSequenceKeypoint.new(0.5, 0.8),
+			NumberSequenceKeypoint.new(1, 0),
+		})
+		aura.Lifetime = NumberRange.new(1, 2)
+		aura.Rate = 6
+		aura.Speed = NumberRange.new(0.2, 0.6)
+		aura.SpreadAngle = Vector2.new(180, 180)
+		aura.LightEmission = 1
+		aura.LightInfluence = 0
+		aura.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.5),
+			NumberSequenceKeypoint.new(1, 1),
+		})
+		aura.Parent = block
+	end
 end
 
 -- "2500" -> "2 500". Narrow no-break space, so a price never wraps in the
@@ -708,23 +849,11 @@ local function buildBlockGrid(
 				end
 
 				local oreId = layerState.ores[key]
-				local colour: Color3
-				local material: Enum.Material
-				if oreId then
-					local ore = OreCatalog.get(oreId)
-					if ore then
-						colour = colourOf(ore)
-						material = Enum.Material.SmoothPlastic
-					else
-						colour = PALETTE.Rock
-						material = Enum.Material.Slate
-					end
-				else
-					-- Dirt block
-					local h = hash(cellX + layerIndex * 100, cellY)
-					colour = if h > 0.5 then PALETTE.Rock else PALETTE.RockDark
-					material = Enum.Material.Slate
-				end
+				-- All blocks share the same base rock appearance for a
+				-- uniform surface. Ore blocks are distinguished by the
+				-- decorations added after creation (crystals, veins, glow).
+				local colour: Color3 = PALETTE.Rock
+				local material: Enum.Material = Enum.Material.Slate
 
 				local size = BLOCK_SIZE - BLOCK_GAP
 				local block = part(folder, `Block_{layerIndex}_{cellX}_{cellY}`, {
@@ -742,6 +871,10 @@ local function buildBlockGrid(
 				block:SetAttribute("BlockY", cellY)
 				if oreId then
 					block:SetAttribute("OreId", oreId)
+					local ore = OreCatalog.get(oreId)
+					if ore then
+						decorateOreBlock(block, ore)
+					end
 				end
 			end
 		end
@@ -881,36 +1014,27 @@ local function buildDrillSite(model: Model, origin: CFrame, centreZ: number)
 	label(pad, "FOREUSE", subtitle, signHeight)
 end
 
--- A teleport pad at the bottom of the mine, with a ProximityPrompt that
--- sends the player back to the surface (the gangway entrance). The actual
--- teleport is client-side: the pad fires a ProximityPrompt, and the client
--- reads the surface CFrame from the pad's SurfaceTarget attribute.
+-- An invisible anchor at the pit bottom that carries the surface destination
+-- as attributes. The client reads these to teleport via a UI button — no
+-- ProximityPrompt, no visible pad.
 local function buildSurfacePad(model: Model, origin: CFrame, centreZ: number)
 	local surfaceZ = centreZ - MINE_RADIUS + 8
-	local pad = part(model, "SurfacePad", {
-		Size = Vector3.new(6, 0.5, 6),
-		CFrame = origin * CFrame.new(0, FLOOR_TOP + 0.3, centreZ),
-		Color = PALETTE.Trim,
-		Material = Enum.Material.Neon,
-	})
+	local pad = Instance.new("Part")
+	pad.Name = "SurfacePad"
+	pad.Size = Vector3.new(1, 1, 1)
+	pad.Transparency = 1
+	pad.Anchored = true
+	pad.CanCollide = false
+	pad.CanQuery = false
+	pad.CanTouch = false
+	pad.CastShadow = false
+	pad.CFrame = origin * CFrame.new(0, FLOOR_TOP + 0.3, centreZ)
+	pad.Parent = model
 
-	-- Store the surface destination as a CFrame attribute so the client can
-	-- read it without any remote call.
 	local surfaceCFrame = origin * CFrame.new(0, WALK_Y + 1, surfaceZ)
 	pad:SetAttribute("SurfaceX", surfaceCFrame.Position.X)
 	pad:SetAttribute("SurfaceY", surfaceCFrame.Position.Y)
 	pad:SetAttribute("SurfaceZ", surfaceCFrame.Position.Z)
-
-	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Remonter"
-	prompt.ObjectText = "Surface"
-	prompt.HoldDuration = 0
-	prompt.MaxActivationDistance = 12
-	prompt.RequiresLineOfSight = false
-	prompt.Parent = pad
-
-	pointLight(pad, PALETTE.Trim, 20, 1.4)
-	label(pad, "SURFACE", "Remonter à la surface", 3)
 end
 
 function ResearchMineBuilder.buildZone(parent: Instance, origin: CFrame, span: number): Model
@@ -927,14 +1051,9 @@ function ResearchMineBuilder.buildZone(parent: Instance, origin: CFrame, span: n
 		buildTerrace(model, origin, centreZ, index)
 	end
 
-	part(model, "PitFloor", {
-		Shape = Enum.PartType.Cylinder,
-		Size = Vector3.new(FLOOR_THICKNESS, FLOOR_RADIUS * 2, FLOOR_RADIUS * 2),
-		CFrame = origin
-			* CFrame.new(0, FLOOR_TOP - FLOOR_THICKNESS / 2, centreZ)
-			* CFrame.Angles(0, 0, math.rad(90)),
-		Color = PALETTE.RockDark,
-	})
+	-- No PitFloor: the block grid IS the floor. The blocks fill the
+	-- innermost circle and the player walks on top of them. Digging
+	-- through all three layers drops the player onto the bedrock below.
 
 	-- Bedrock below the deepest layer: a floor the player falls onto after
 	-- digging through all three layers.

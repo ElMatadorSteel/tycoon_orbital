@@ -42,6 +42,7 @@ end
 local OreCatalog = require(fromShared("Domain/Research/OreCatalog"))
 local Rarity = require(fromShared("Domain/Research/Rarity"))
 local Icons = require(fromShared("Icons"))
+local UIPack = require(fromShared("UIPack"))
 local Theme = require("./Theme")
 
 local COLORS = Theme.Colors
@@ -259,8 +260,12 @@ function ResearchPanel.new(parent: Instance): ResearchPanel
 		Parent = parent,
 	})
 
+	-- Nudged down out from under the bandeau: the bar straddles the window's
+	-- top edge and reaches a few pixels into the content, which took a bite
+	-- out of the icon's crown.
 	local headerIcon = Theme.new("ImageLabel", {
 		Name = "Icon",
+		Position = UDim2.fromOffset(0, 8),
 		Size = UDim2.fromOffset(HEADER_ICON, HEADER_ICON),
 		BackgroundTransparency = 1,
 		-- The backpack, matching the dock button that opens this window.
@@ -270,21 +275,27 @@ function ResearchPanel.new(parent: Instance): ResearchPanel
 
 	local headerLeft = HEADER_ICON + SPACE.md
 
-	local title = Theme.new("TextLabel", {
-		Name = "Title",
-		Position = UDim2.fromOffset(headerLeft, 0),
-		Size = UDim2.new(1, -headerLeft, 0, 26),
-		BackgroundTransparency = 1,
-		Font = Theme.Font.Display,
-		TextSize = Theme.TextSize.title,
-		TextColor3 = COLORS.Text,
-		TextXAlignment = Enum.TextXAlignment.Left,
+	-- The name rides a bandeau across the window's top edge instead of sitting
+	-- as a line of text inside it. Blue because the zone is cyan: the bars are
+	-- used at their own colour, so the one to pick is the closest to the
+	-- function colour rather than any of them plus a tint.
+	--
+	-- Positioned against the window EDGE, which is Space.xl above the content
+	-- the panel's own padding starts at -- that offset is what the bandeau has
+	-- to climb back over to straddle the frame.
+	local titleBar = Theme.titleBar({
+		Name = "TitleBar",
+		Image = UIPack.Bar.Blue,
 		Text = WORDS.Title,
-	}, { Theme.textStroke(Theme.Line.base) })
+		Position = UDim2.new(0.5, 0, 0, -SPACE.xl),
+		Overhang = SPACE.xl + 6,
+	})
 
+	-- Now the only line in the header, so it sits centred against the icon
+	-- rather than tucked under a title that has left the frame.
 	local subtitle = Theme.caption({
 		Name = "Subtitle",
-		Position = UDim2.fromOffset(headerLeft, 26),
+		Position = UDim2.fromOffset(headerLeft, 21),
 		Size = UDim2.new(1, -headerLeft, 0, 18),
 		TextXAlignment = Enum.TextXAlignment.Left,
 		Text = WORDS.Subtitle,
@@ -294,7 +305,7 @@ function ResearchPanel.new(parent: Instance): ResearchPanel
 		Name = "Header",
 		Size = UDim2.new(1, 0, 0, HEADER_ICON),
 		BackgroundTransparency = 1,
-	}, { headerIcon, title, subtitle })
+	}, { headerIcon, subtitle })
 
 	-- Shown INSTEAD of the list before the pad has been paid for. The window
 	-- is reachable either way on purpose: a menu that appears out of nowhere
@@ -372,6 +383,9 @@ function ResearchPanel.new(parent: Instance): ResearchPanel
 		Size = UDim2.fromScale(1, 1),
 		Text = WORDS.SellAll,
 	})
+	-- 200x48, which is inside the band where a pack plate stretches without
+	-- showing it. The tint is still FUNCTION.Money -- the sprite supplies the
+	-- texture, the theme keeps saying what the button does.
 	self._sellAll = Theme.chunky({
 		Name = "SellAll",
 		AnchorPoint = Vector2.new(1, 1),
@@ -380,6 +394,8 @@ function ResearchPanel.new(parent: Instance): ResearchPanel
 		BackgroundColor3 = FUNCTION.Money,
 		Radius = Theme.Radius.md,
 		Inner = true,
+		Plate = UIPack.Plate.Green,
+		PlateTint = false,
 	}, { sellAllLabel })
 
 	local closeLabel = Theme.body({
@@ -391,9 +407,15 @@ function ResearchPanel.new(parent: Instance): ResearchPanel
 		AnchorPoint = Vector2.new(0, 1),
 		Position = UDim2.new(0, 0, 1, 0),
 		Size = UDim2.fromOffset(150, FOOTER_HEIGHT),
-		BackgroundColor3 = COLORS.MenuInner,
+		-- Red, at the pack's own saturation. The purple it used to wear came
+		-- from tinting the neutral plate with the window's own MenuInner, and
+		-- a dark tint on a light sprite is exactly the dull result that trade
+		-- always gives.
+		BackgroundColor3 = FUNCTION.Demolish,
 		Radius = Theme.Radius.md,
 		Inner = true,
+		Plate = UIPack.Plate.Red,
+		PlateTint = false,
 	}, { closeLabel })
 
 	self._scale = Theme.new("UIScale", { Scale = 1 })
@@ -414,6 +436,7 @@ function ResearchPanel.new(parent: Instance): ResearchPanel
 		Parent = parent,
 	}, {
 		Theme.padding(SPACE.xl),
+		titleBar.Root,
 		header,
 		self._locked,
 		self._grid,

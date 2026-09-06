@@ -12,6 +12,7 @@
 -- IMPORTANT: no size, color or font should be hardcoded anywhere else.
 
 local TweenService = game:GetService("TweenService")
+local ContentProvider = game:GetService("ContentProvider")
 
 -- fromShared(path) reaches ReplicatedStorage.Shared directly: Rojo maps
 -- src/Client and src/Shared to different service roots with no common
@@ -35,7 +36,20 @@ local Theme = {}
 -- Scales. Pick from these, never invent an in-between value.
 
 Theme.Space = { xs = 4, sm = 8, md = 12, lg = 16, xl = 24, xxl = 32 }
-Theme.Radius = { sm = 8, md = 14, lg = 20, xl = 26 }
+-- Corners, cut down to the UI pack's own language.
+--
+-- Read out of the pack's demo place: NOT ONE of its frames carries a UICorner.
+-- Its windows, its cards and its wells are square, wearing a 3px black stroke
+-- -- Line.base, which this theme already used -- and every curve in the pack
+-- lives inside a sprite instead. Against that, the 26px window corner this
+-- scale used to open with read as a different product bolted under the
+-- bandeau, which is exactly what it was.
+--
+-- Not taken to zero: a few pixels stop a corner from reading as a cut, and
+-- they match the small radius the plates themselves are drawn with. The
+-- shapes that are round BY CONSTRUCTION -- the capsule, the gauge pill, the
+-- badge -- compute their radius from their own height and are untouched.
+Theme.Radius = { sm = 4, md = 6, lg = 8, xl = 10 }
 Theme.Line = { thin = 2, base = 3, thick = 4 }
 Theme.TextSize = { caption = 12, small = 14, body = 16, title = 21, display = 28 }
 Theme.Control = { sm = 36, md = 48, lg = 64 }
@@ -825,8 +839,23 @@ function Theme.chunky(props: { [string]: any }, children: { Instance }?): Chunky
 	-- caller might want louder than the shared default: a big standalone tile
 	-- carries a thicker line than a card packed into a grid.
 	local line = props.Stroke or Theme.Line.base
+	-- A sprite from `UIPack` to use as the face instead of painting it. The
+	-- caller passes the id; the colour it would have been painted becomes the
+	-- tint, so a plated button still answers to the same one-colour-per-
+	-- function rule and SetColor still works on it.
+	--
+	-- Only worth doing between about 3:1 and 6:1 -- see the note in `UIPack`.
+	local plate = props.Plate
+	-- `PlateTint = false` leaves the sprite the colours it was drawn with.
+	--
+	-- Only the neutral plate takes a tint honestly: the coloured ones carry
+	-- their colour in the pixels, so multiplying a theme colour over them
+	-- drains both. A vivid green plate says "money" better than a grey one
+	-- tinted green -- the tint is the compromise, not the default.
+	local plateTint = props.PlateTint ~= false
 	props.Radius, props.Depth, props.BackgroundColor3, props.Inner, props.Stroke =
 		nil, nil, nil, nil, nil
+	props.Plate, props.PlateTint = nil, nil
 
 	local root = Theme.new("Frame", props)
 	root.BackgroundTransparency = 1
@@ -857,9 +886,57 @@ function Theme.chunky(props: { [string]: any }, children: { Instance }?): Chunky
 		Parent = root,
 	}, { Theme.corner(radius), outerStroke, gradient })
 
+	-- The plated face: the sprite carries the outline, the trim and the
+	-- relief in its own pixels, so the three the theme would have drawn are
+	-- switched off rather than drawn underneath it.
+	--
+	-- Switched off, not skipped: if the asset is ever moderated away the
+	-- image never loads, and the fallback below paints the face the ordinary
+	-- way instead of leaving a hole where a button was.
+	local plateArt: ImageLabel? = nil
+	if plate then
+		face.BackgroundTransparency = 1
+		outerStroke.Enabled = false
+		gradient.Enabled = false
+		local art = Theme.new("ImageLabel", {
+			Name = "Plate",
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			Image = plate,
+			ImageColor3 = if plateTint then color else Color3.new(1, 1, 1),
+			ScaleType = Enum.ScaleType.Stretch,
+			-- Under the label and the icon, which sit at the default 1.
+			ZIndex = 0,
+			Parent = face,
+		})
+		plateArt = art
+		-- Asked for explicitly, and judged on the FETCH, not on `IsLoaded`.
+		--
+		-- IsLoaded only turns true once the image has actually been rendered,
+		-- and the engine does not render one inside a window that has never been
+		-- opened: judging by it marks every button in a closed panel as broken
+		-- and strips the artwork off it. GetAssetFetchStatus answers without
+		-- needing a single pixel on screen, and tells a moderated asset apart
+		-- from one that simply has not been shown yet.
+		task.spawn(function()
+			pcall(function()
+				ContentProvider:PreloadAsync({ art })
+			end)
+			local failed = ContentProvider:GetAssetFetchStatus(plate)
+				== Enum.AssetFetchStatus.Failure
+			if art.Parent and failed then
+				art:Destroy()
+				plateArt = nil
+				face.BackgroundTransparency = 0
+				outerStroke.Enabled = true
+				gradient.Enabled = true
+			end
+		end)
+	end
+
 	-- The light trim is an inner frame, not a UIStroke: two strokes can't
 	-- stack on the same instance.
-	if inner then
+	if inner and not plate then
 		Theme.new("Frame", {
 			Name = "Inner",
 			Size = UDim2.new(1, -Theme.Line.thick * 2, 1, -Theme.Line.thick * 2),
@@ -894,6 +971,9 @@ function Theme.chunky(props: { [string]: any }, children: { Instance }?): Chunky
 		shadow.BackgroundColor3 = Theme.darken(newColor, 0.45)
 		gradient.Color =
 			ColorSequence.new(Theme.lighten(newColor, 0.22), Theme.darken(newColor, 0.154))
+		if plateArt and plateTint then
+			plateArt.ImageColor3 = newColor
+		end
 	end
 
 	function obj:SetLifted(lifted: boolean)
@@ -932,6 +1012,62 @@ function Theme.chunky(props: { [string]: any }, children: { Instance }?): Chunky
 	end)
 
 	return obj
+end
+
+----------------------------------------------------------------------
+-- Window bandeau: a title bar from the UI pack, worn ACROSS the top edge of
+-- a window rather than laid inside it.
+--
+-- Wider than the window and centred on its edge, which is how the pack builds
+-- its own windows: the overhang is what makes the bar read as a plaque bolted
+-- to the front of the window instead of a strip of its background. A title
+-- inside the frame is a line of text; a title on a plaque is a nameplate.
+--
+-- Drawn at the sprite's own colour -- see the note on PlateTint above -- so
+-- the bar to pass is the one closest to the window's function colour.
+
+export type TitleBar = { Root: ImageLabel, Text: TextLabel }
+
+function Theme.titleBar(config: { [string]: any }): TitleBar
+	local height = config.Height or 56
+	-- How far the bar reaches past the window on each side. The caller knows
+	-- its own padding, which is what has to be cancelled to reach the edge.
+	local overhang = config.Overhang or Theme.Space.xl
+
+	local label = Theme.new("TextLabel", {
+		Name = "Text",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		-- A shade above centre: these bars are drawn with a thicker lip along
+		-- the bottom, and text centred on the sprite sits low in the light.
+		Position = UDim2.fromScale(0.5, 0.46),
+		Size = UDim2.new(1, -height * 2, 0, math.floor(height * 0.46)),
+		BackgroundTransparency = 1,
+		Font = Theme.Font.Display,
+		TextSize = Theme.TextSize.title,
+		TextColor3 = Theme.Colors.Text,
+		TextScaled = true,
+		Text = config.Text or "",
+	}, {
+		Theme.textStroke(Theme.Line.base),
+		Theme.new("UITextSizeConstraint", {
+			MaxTextSize = Theme.TextSize.display,
+			MinTextSize = 12,
+		}),
+	})
+
+	local root = Theme.new("ImageLabel", {
+		Name = config.Name or "TitleBar",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = config.Position or UDim2.fromScale(0.5, 0),
+		Size = UDim2.new(1, overhang * 2, 0, height),
+		BackgroundTransparency = 1,
+		Image = config.Image,
+		ScaleType = Enum.ScaleType.Stretch,
+		ZIndex = config.ZIndex or 3,
+		Parent = config.Parent,
+	}, { label })
+
+	return { Root = root, Text = label } :: any
 end
 
 ----------------------------------------------------------------------

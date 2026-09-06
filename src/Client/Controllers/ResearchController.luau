@@ -2,30 +2,12 @@
 -- Drives the research zone: opens the ore panel from the dock button, keeps
 -- its lines in step with the replicated attributes, sends a sale -- and
 -- mines the blocks in the pit the panel's own bag fills from.
---
--- The panel button lives in BuildPanel's left dock, beside Lobby and
--- Renaissance, because that dock is the home of every control that takes
--- you OUT of the build loop -- see the note there. It is reached through
--- BuildController:Panel() rather than rebuilt here: two docks on the same
--- screen edge would overlap, and the one that already exists is the one the
--- player knows.
---
--- Mining a block needs no equipped Tool, unlike the Railgun: a block is a
--- fixed fixture a player walks up to and clicks, not a moving target aimed
--- at from across a station. A plain click, filtered to the player's OWN
--- research-mine BlockGrid folder, is enough -- a stray click anywhere else
--- simply hits nothing and no-ops. The client only ever CLAIMS which block
--- it hit (Net.DigBlock:InvokeServer(layer, x, y)) -- the server is sole
--- judge of whether that claim pays out (see Application/UseCases/DigBlock).
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
 
--- fromShared(path) reaches ReplicatedStorage.Shared directly: Rojo maps
--- src/Client and src/Shared to different service roots with no common
--- ancestor a relative "../.." path can reach. Lune has no `game`, so the
--- fallback below -- an ordinary relative require -- is what runs there.
 local function fromShared(path: string): any
 	if game then
 		local node: any = (game :: any):GetService("ReplicatedStorage").Shared
@@ -37,6 +19,7 @@ local function fromShared(path: string): any
 	return "../../Shared/" .. path
 end
 
+local Balance = require(fromShared("Balance"))
 local Net = require(fromShared("Net"))
 local OreCatalog = require(fromShared("Domain/Research/OreCatalog"))
 local Icons = require(fromShared("Icons"))
@@ -49,6 +32,35 @@ local COLORS = Theme.Colors
 local SPACE = Theme.Space
 local MAX_HIT_DISTANCE = 1000
 
+-- How long one block takes to break under an unbroken hold.
+local DIG_SECONDS = Balance.Research.DigDuration
+
+-- The progress ring.
+--
+-- Circular and drawn AT the cursor rather than a bar along the bottom of
+-- the screen: the eyes are already on the block being broken, and a bar
+-- somewhere else makes the player look away from it to read how far along
+-- the dig is. The ring sits where they are looking anyway.
+--
+-- One unbroken arc, drawn by the same rounded-corner renderer as every
+-- other circle in the interface, so it stays smooth at any size. Cut into
+-- separate segments it read as a chain, which is a texture, not a gauge.
+local RING_DIAMETER = 52
+local RING_THICKNESS = 5
+local RING_FILL = Theme.Function.Research
+-- Pale, not dark. The ring is drawn over whatever the player happens to be
+-- aiming at -- dirt, ore, their own character in the way -- and a dark track
+-- disappears against half of that. The black rim under it takes care of the
+-- other half.
+local RING_TRACK = COLORS.Light
+-- The unfilled part stays visible, not invisible: the ring has to show how
+-- much is LEFT, not only how much is done.
+local RING_TRACK_TRANSPARENCY = 0.55
+-- The black outer edge the rest of the interface wears, here as a wider ring
+-- sitting under the other two.
+local RING_RIM = 3
+local RING_RIM_TRANSPARENCY = 0.35
+
 local ResearchController = {}
 
 local function getCamera(): Camera
@@ -56,7 +68,6 @@ local function getCamera(): Camera
 end
 
 ----------------------------------------------------------------------
--- Ephemeral toast for a mined hit
 
 function ResearchController:_buildToast(gui: ScreenGui)
 	local icon = Theme.new("ImageLabel", {
@@ -66,7 +77,7 @@ function ResearchController:_buildToast(gui: ScreenGui)
 		BackgroundTransparency = 1,
 		Image = Icons.Misc["Accept"],
 	})
-	local label = Theme.body({
+	local lbl = Theme.body({
 		Position = UDim2.fromOffset(SPACE.md + 34, 0),
 		Size = UDim2.new(1, -(SPACE.md + 42), 1, 0),
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -75,7 +86,7 @@ function ResearchController:_buildToast(gui: ScreenGui)
 	local scale = Theme.new("UIScale", { Scale = 1 })
 
 	self._toastIcon = icon
-	self._toastLabel = label
+	self._toastLabel = lbl
 	self._toastScale = scale
 	self._toast = Theme.panel({
 		Name = "ResearchToast",
@@ -86,7 +97,7 @@ function ResearchController:_buildToast(gui: ScreenGui)
 		Visible = false,
 		ZIndex = 8,
 		Parent = gui,
-	}, { icon, label, scale })
+	}, { icon, lbl, scale })
 end
 
 function ResearchController:_toastMessage(message: string, isError: boolean?)
@@ -110,12 +121,8 @@ function ResearchController:_toastMessage(message: string, isError: boolean?)
 end
 
 ----------------------------------------------------------------------
--- Mining: raycast to find which block the player is looking at
 
--- Returns the block Part if the crosshair is over a mineable block in the
--- player's own mine, or nil otherwise. The block carries Layer, BlockX,
--- BlockY attributes stamped by ResearchMineBuilder.buildBlockGrid.
-function ResearchController:_hoveredBlock(): BasePart?
+function ResearchController:_blockAtMouse(mouseX: number, mouseY: number): BasePart?
 	local player = Players.LocalPlayer
 	local plots = workspace:FindFirstChild("Plots")
 	local zone = plots and plots:FindFirstChild(`ResearchMine_{player.UserId}`, true)
@@ -128,8 +135,7 @@ function ResearchController:_hoveredBlock(): BasePart?
 	end
 
 	local camera = getCamera()
-	local viewport = camera.ViewportSize
-	local ray = camera:ViewportPointToRay(viewport.X / 2, viewport.Y / 2)
+	local ray = camera:ViewportPointToRay(mouseX, mouseY)
 
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Include
@@ -145,7 +151,6 @@ function ResearchController:_hoveredBlock(): BasePart?
 		return nil
 	end
 
-	-- Must have block attributes
 	local layer = hit:GetAttribute("Layer")
 	if typeof(layer) ~= "number" then
 		return nil
@@ -155,12 +160,15 @@ function ResearchController:_hoveredBlock(): BasePart?
 end
 
 ----------------------------------------------------------------------
--- The dig swing
 
 local SWING_LIFT = TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local SWING_STRIKE = TweenInfo.new(0.09, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 local SWING_RECOVER = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local SWING_SECONDS = 0.1 + 0.09 + 0.22
+-- One swing per swing, back to back, for as long as the button is down: a
+-- shovel that strikes once and then waits out the other two seconds reads
+-- as a bug, not as digging.
+local SWING_INTERVAL = SWING_SECONDS
 
 local SHOVEL_NAME = "Pelle"
 
@@ -240,17 +248,198 @@ function ResearchController:_playDigSwing()
 	end)
 end
 
-function ResearchController:_mine()
-	local block = self:_hoveredBlock()
-	if not block then
+----------------------------------------------------------------------
+-- Hold to dig
+--
+-- Pressure, not clicks. The button goes down, the ring fills at the cursor
+-- over DIG_SECONDS, and the block breaks when the ring closes. Letting go
+-- -- or drifting onto another block -- throws the progress away and starts
+-- the next one from zero. That is the Minecraft rule, and it is the one a
+-- player arrives already knowing.
+
+-- One circle of the ring: a frame with no body at all, its corners rounded
+-- the whole way to a disc, wearing the stroke that IS the ring. Returns the
+-- stroke, since that is the part anything else has to reach.
+local function ringCircle(
+	parent: Instance,
+	position: UDim2,
+	color: Color3,
+	thickness: number,
+	transparency: number,
+	zIndex: number
+): UIStroke
+	local stroke = Theme.new("UIStroke", {
+		Color = color,
+		Thickness = thickness,
+		Transparency = transparency,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		LineJoinMode = Enum.LineJoinMode.Round,
+	})
+	Theme.new("Frame", {
+		Name = "Circle",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = position,
+		Size = UDim2.fromOffset(RING_DIAMETER, RING_DIAMETER),
+		BackgroundTransparency = 1,
+		ZIndex = zIndex,
+		Parent = parent,
+	}, { Theme.new("UICorner", { CornerRadius = UDim.new(1, 0) }), stroke })
+	return stroke
+end
+
+-- Half the sweep, and the half of the circle it is drawn on.
+--
+-- The gradient's hard edge runs through the centre of the circle, so it
+-- keeps a half-PLANE of the ring -- turn the gradient and that half-plane
+-- turns with it. The clip cuts what survives down to one side of the
+-- circle, and a half-plane cut down to a half-circle is exactly an arc.
+-- Two of those, one per side, cover the full turn between them.
+local function ringSweep(root: Frame, isRight: boolean): UIGradient
+	local clip = Theme.new("Frame", {
+		Name = if isRight then "RightHalf" else "LeftHalf",
+		AnchorPoint = Vector2.new(if isRight then 0 else 1, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(0.5, 0, 1, 0),
+		BackgroundTransparency = 1,
+		ClipsDescendants = true,
+		ZIndex = 12,
+		Parent = root,
+	})
+
+	-- Pushed back to the clip's inner edge, which is the ring's centre.
+	local centre = UDim2.fromScale(if isRight then 0 else 1, 0.5)
+	local stroke = ringCircle(clip, centre, RING_FILL, RING_THICKNESS, 0, 12)
+
+	return Theme.new("UIGradient", {
+		-- Two keypoints a thousandth apart rather than one: a NumberSequence
+		-- cannot hold two at the same time value, and the sliver between
+		-- them is the arc's leading edge, softened by a fraction of a pixel.
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1),
+			NumberSequenceKeypoint.new(0.499, 1),
+			NumberSequenceKeypoint.new(0.5, 0),
+			NumberSequenceKeypoint.new(1, 0),
+		}),
+		Rotation = if isRight then -180 else 0,
+		Parent = stroke,
+	})
+end
+
+function ResearchController:_buildDigRing(gui: ScreenGui)
+	local span = RING_DIAMETER + (RING_THICKNESS + RING_RIM) * 2 + SPACE.xs
+	local root = Theme.new("Frame", {
+		Name = "DigRing",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Size = UDim2.fromOffset(span, span),
+		BackgroundTransparency = 1,
+		Visible = false,
+		ZIndex = 10,
+		Parent = gui,
+	})
+
+	local centre = UDim2.fromScale(0.5, 0.5)
+	-- Rim, then track, then the sweep on top of both.
+	ringCircle(root, centre, COLORS.Outline, RING_THICKNESS + RING_RIM * 2, RING_RIM_TRANSPARENCY, 10)
+	ringCircle(root, centre, RING_TRACK, RING_THICKNESS, RING_TRACK_TRANSPARENCY, 11)
+
+	self._digSweepRight = ringSweep(root, true)
+	self._digSweepLeft = ringSweep(root, false)
+	self._digRing = root
+end
+
+function ResearchController:_showDigRing(mouseX: number, mouseY: number, ratio: number)
+	local ring = self._digRing
+	if not ring then
 		return
 	end
+	ring.Position = UDim2.fromOffset(mouseX, mouseY)
+	ring.Visible = true
 
+	-- The sweep, clockwise from twelve o'clock. Each half is turned to it and
+	-- clamped at its own end of the circle: the right half is already full at
+	-- half a turn, and the left one shows nothing until the sweep reaches it.
+	local sweep = math.clamp(ratio, 0, 1) * 360
+	self._digSweepRight.Rotation = math.min(sweep, 180) - 180
+	self._digSweepLeft.Rotation = math.max(sweep, 180) - 180
+end
+
+function ResearchController:_hideDigRing()
+	local ring = self._digRing
+	if not ring then
+		return
+	end
+	ring.Visible = false
+	self._digSweepRight.Rotation = -180
+	self._digSweepLeft.Rotation = 0
+end
+
+function ResearchController:_beginDig()
+	if self._digHolding then
+		return
+	end
+	self._digHolding = true
+
+	-- A token, not just the flag: a release followed immediately by a press
+	-- would otherwise leave the old loop running alongside the new one.
+	self._digToken = (self._digToken or 0) + 1
+	local token = self._digToken
+
+	task.spawn(function()
+		local mouse = Players.LocalPlayer:GetMouse()
+		local target: BasePart? = nil
+		local progress = 0
+		local nextSwing = 0
+
+		while self._digHolding and self._digToken == token do
+			local delta = RunService.RenderStepped:Wait()
+			-- Re-aimed every frame. A block that has left the world -- dug,
+			-- or carried off by a mine regeneration -- simply stops being
+			-- returned here, and reads the same as aiming at nothing.
+			local block = self:_blockAtMouse(mouse.X, mouse.Y)
+			if block ~= target then
+				target = block
+				progress = 0
+				nextSwing = 0
+				self:_hideDigRing()
+			end
+			if not target then
+				continue
+			end
+
+			progress += delta
+			if os.clock() >= nextSwing then
+				self:_playDigSwing()
+				nextSwing = os.clock() + SWING_INTERVAL
+			end
+			self:_showDigRing(mouse.X, mouse.Y, progress / DIG_SECONDS)
+
+			if progress >= DIG_SECONDS then
+				progress = 0
+				self:_hideDigRing()
+				self:_mine(target)
+				-- Held through the break: the next block under the cursor is
+				-- picked up on the next frame and started from zero.
+				target = nil
+			end
+		end
+
+		self:_hideDigRing()
+	end)
+end
+
+function ResearchController:_stopDig()
+	self._digHolding = false
+	self:_hideDigRing()
+end
+
+----------------------------------------------------------------------
+
+-- Break one block, once its hold is complete. The swing is not started here
+-- any more -- the hold loop has had the shovel working the whole time.
+function ResearchController:_mine(block: BasePart)
 	local layer = block:GetAttribute("Layer") :: number
 	local bx = block:GetAttribute("BlockX") :: number
 	local by = block:GetAttribute("BlockY") :: number
-
-	self:_playDigSwing()
 
 	local ok, result = Net.DigBlock:InvokeServer(layer, bx, by)
 	if ok then
@@ -261,7 +450,7 @@ function ResearchController:_mine()
 		end
 	else
 		if result == "cooldown" then
-			-- Silent: no toast for normal cooldown
+			-- Silent
 		else
 			self:_toastMessage(tostring(result), true)
 		end
@@ -269,46 +458,94 @@ function ResearchController:_mine()
 end
 
 ----------------------------------------------------------------------
--- Surface teleport: the ProximityPrompt on the SurfacePad teleports
--- the player back to the gangway entrance.
 
-function ResearchController:_setupSurfaceTeleport()
-	local player = Players.LocalPlayer
+function ResearchController:_buildSurfaceButton(gui: ScreenGui)
+	local btn = Theme.new("TextButton", {
+		Name = "SurfaceBtn",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -SPACE.xl, 0, SPACE.xl),
+		Size = UDim2.fromOffset(200, 44),
+		BackgroundColor3 = COLORS.Accent,
+		Text = "",
+		AutoButtonColor = true,
+		Visible = false,
+		ZIndex = 9,
+		Parent = gui,
+	})
+	Theme.corner(Theme.Radius.md).Parent = btn
+	Theme.stroke(Theme.darken(COLORS.Accent, 0.3), 2).Parent = btn
 
-	-- The pad is built when the mine is built, which can happen after this
-	-- controller starts. Poll for it.
-	task.spawn(function()
-		while true do
-			local plots = workspace:FindFirstChild("Plots")
-			local zone = plots and plots:FindFirstChild(`ResearchMine_{player.UserId}`, true)
-			if zone then
-				local pad = zone:FindFirstChild("SurfacePad")
-				if pad and pad:IsA("BasePart") then
-					local prompt = pad:FindFirstChildOfClass("ProximityPrompt")
-					if prompt then
-						prompt.Triggered:Connect(function()
-							local character = player.Character
-							if not character then
-								return
-							end
-							local root = character:FindFirstChild("HumanoidRootPart")
-							if not root or not root:IsA("BasePart") then
-								return
-							end
-							local sx = pad:GetAttribute("SurfaceX")
-							local sy = pad:GetAttribute("SurfaceY")
-							local sz = pad:GetAttribute("SurfaceZ")
-							if typeof(sx) == "number" and typeof(sy) == "number" and typeof(sz) == "number" then
-								root.CFrame = CFrame.new(sx, sy, sz)
-							end
-						end)
-						return -- done
-					end
-				end
-			end
-			task.wait(2)
-		end
+	local surfLbl = Theme.body({
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(0.9, 0.8),
+		Text = "\u{2191} Remonter",
+		TextColor3 = Color3.fromRGB(255, 255, 255),
+	})
+	surfLbl.Parent = btn
+
+	self._surfaceBtn = btn
+
+	btn.Activated:Connect(function()
+		self:_teleportToSurface()
 	end)
+end
+
+function ResearchController:_teleportToSurface()
+	local player = Players.LocalPlayer
+	local character = player.Character
+	if not character then
+		return
+	end
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not root or not root:IsA("BasePart") then
+		return
+	end
+
+	local plots = workspace:FindFirstChild("Plots")
+	local zone = plots and plots:FindFirstChild(`ResearchMine_{player.UserId}`, true)
+	if not zone then
+		return
+	end
+	local pad = zone:FindFirstChild("SurfacePad")
+	if not pad or not pad:IsA("BasePart") then
+		return
+	end
+
+	local sx = pad:GetAttribute("SurfaceX")
+	local sy = pad:GetAttribute("SurfaceY")
+	local sz = pad:GetAttribute("SurfaceZ")
+	if typeof(sx) == "number" and typeof(sy) == "number" and typeof(sz) == "number" then
+		root.CFrame = CFrame.new(sx, sy, sz)
+	end
+end
+
+function ResearchController:_updateSurfaceButton()
+	local player = Players.LocalPlayer
+	local character = player.Character
+	if not character or not self._surfaceBtn then
+		return
+	end
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not root or not root:IsA("BasePart") then
+		self._surfaceBtn.Visible = false
+		return
+	end
+
+	local plots = workspace:FindFirstChild("Plots")
+	local zone = plots and plots:FindFirstChild(`ResearchMine_{player.UserId}`, true)
+	if not zone then
+		self._surfaceBtn.Visible = false
+		return
+	end
+
+	local pad = zone:FindFirstChild("SurfacePad")
+	if not pad or not pad:IsA("BasePart") then
+		self._surfaceBtn.Visible = false
+		return
+	end
+
+	self._surfaceBtn.Visible = root.Position.Y < pad.Position.Y + 8
 end
 
 function ResearchController:Start()
@@ -323,10 +560,12 @@ function ResearchController:Start()
 	local panel = ResearchPanel.new(gui)
 	self._panel = panel
 	self:_buildToast(gui)
+	self:_buildDigRing(gui)
 
 	Players.LocalPlayer.CharacterAdded:Connect(function()
 		self._digTrack = nil
 		self._swinging = false
+		self:_stopDig()
 	end)
 
 	panel.onSell = function(oreId: string?)
@@ -366,16 +605,31 @@ function ResearchController:Start()
 		end
 	end)
 
+	self:_buildSurfaceButton(gui)
+
 	UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessed: boolean)
 		if gameProcessed then
 			return
 		end
 		if input.UserInputType == Enum.UserInputType.MouseButton1 then
-			self:_mine()
+			self:_beginDig()
 		end
 	end)
 
-	self:_setupSurfaceTeleport()
+	-- The release is taken whatever the interface did with it: a button let
+	-- go over an open panel still has to stop the dig it started.
+	UserInputService.InputEnded:Connect(function(input: InputObject)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			self:_stopDig()
+		end
+	end)
+
+	task.spawn(function()
+		while true do
+			self:_updateSurfaceButton()
+			task.wait(0.5)
+		end
+	end)
 end
 
 return ResearchController

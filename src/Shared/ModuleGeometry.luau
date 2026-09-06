@@ -56,9 +56,9 @@
 
 -- Lives directly under Shared now (moved from Server/Adapters/Roblox so the
 -- CLIENT can build the exact same geometry for its build/move ghost preview
--- and BuildPanel's thumbnails -- see CLAUDE.md's module-preview fix notes).
--- Balance is a plain sibling from here, no cross-service boundary to cross.
-local Balance = require("./Balance")
+-- and BuildPanel's thumbnails). Balance is a plain sibling from here, no
+-- cross-service boundary to cross.
+local Balance = require(script.Parent.Balance)
 
 local ModuleGeometry = {}
 
@@ -508,9 +508,12 @@ end
 -- Rungs between two rails. Asymmetric by construction -- it goes on one face
 -- only, which is exactly the point.
 local function ladder(model: Model, at: CFrame, height: number): ()
+	-- Deeper than the rungs it carries (0.26 against their 0.12) so no two
+	-- faces end up a fiftieth of a stud apart: a rail exactly a hair proud of
+	-- its rungs flickers all the way up.
 	for _, side in { -0.4, 0.4 } do
 		piece(model, "LadderRail", {
-			Size = Vector3.new(0.16, height, 0.16),
+			Size = Vector3.new(0.16, height, 0.26),
 			CFrame = at * CFrame.new(side, height / 2, 0),
 			Color = P.Frame,
 			CanQuery = false,
@@ -519,7 +522,10 @@ local function ladder(model: Model, at: CFrame, height: number): ()
 	local rungs = math.max(2, math.floor(height / 0.8))
 	for index = 1, rungs do
 		piece(model, "Rung", {
-			Size = Vector3.new(0.9, 0.12, 0.12),
+			-- 0.8 and not 0.9: at 0.9 a rung ended within a hundredth of a stud
+			-- of the rail's outer face, which is a flickering line up the ladder.
+			-- Ending on the rail's axis buries it instead.
+			Size = Vector3.new(0.8, 0.12, 0.12),
 			CFrame = at * CFrame.new(0, index * height / (rungs + 1), 0),
 			Color = P.HullShade,
 			CanQuery = false,
@@ -556,10 +562,13 @@ local function plinth(model: Model, spanX: number, spanZ: number): number
 		P.Copper
 	)
 
+	-- Sunk to 0.46. At 0.5 the clamp's top face landed EXACTLY on the deck's,
+	-- and two surfaces facing the same way at the same depth fight for the
+	-- pixel: the deck flickered in two patches on all ten modules.
 	for _, sx in { -1, 1 } do
 		piece(model, "Clamp", {
 			Size = Vector3.new(0.35, 0.5, 0.7),
-			CFrame = CFrame.new(sx * run * 0.6, 0.5, spanZ * 0.36),
+			CFrame = CFrame.new(sx * run * 0.6, 0.46, spanZ * 0.36),
 			Color = P.Frame,
 			CanQuery = false,
 		})
@@ -608,8 +617,13 @@ BUILDERS.Core = function(model, spanX, spanZ, height)
 		CFrame.new(0, base + drum / 2, 0),
 		{ Color = P.Hull }
 	)
-	upright(model, "Collar", spanX * 0.76, 0.8, CFrame.new(0, base + 0.4, 0), { Color = P.Frame })
-	upright(model, "Belt", spanX * 0.7, 0.5, CFrame.new(0, base + drum * 0.45, 0), {
+	-- The collar is taller and the belt sits lower than they used to. Both
+	-- rings run wider than the drum, so the ladder's rungs cross them in the
+	-- open, and at the old heights a rung's lid landed a hundredth of a stud
+	-- off a ring's -- two flickering bands on the tower everything else on
+	-- the plot is read against.
+	upright(model, "Collar", spanX * 0.76, 0.95, CFrame.new(0, base + 0.475, 0), { Color = P.Frame })
+	upright(model, "Belt", spanX * 0.7, 0.5, CFrame.new(0, base + drum * 0.4, 0), {
 		Color = P.HullDark,
 	})
 
@@ -794,31 +808,40 @@ BUILDERS.Corridor = function(model, spanX, spanZ, height)
 	end
 
 	for _, sz in { -1, 1 } do
+		-- The kerb stands 0.05 PROUD of the floor rather than flush with it.
+		-- Flush meant its outer face and the floor's shared a plane, and the
+		-- filleted floor corners grazed that same plane -- two flickering lines
+		-- down the length of every corridor. Proud, the kerb simply wins.
 		piece(model, "Kerb", {
 			Size = Vector3.new(spanX, height * 0.85, 0.8),
-			CFrame = CFrame.new(0, height * 0.425, sz * (spanZ / 2 - 0.4)),
+			CFrame = CFrame.new(0, height * 0.425, sz * (spanZ / 2 - 0.35)),
 			Color = P.Frame,
 		})
 		-- A capsule laid along the top of each kerb. One part, and it turns the
 		-- square profile of a walkway edge into a handrail -- the cheapest
 		-- rounding in the file, on the module that has the least to spend.
+		-- Stops 0.12 short of the ends so its caps do not share a plane with
+		-- the kerb's; the gap closes against the next corridor anyway.
 		barrel(
 			model,
 			"KerbRail",
-			spanX,
+			spanX - 0.12,
 			0.5,
-			CFrame.new(0, height * 0.85, sz * (spanZ / 2 - 0.4)),
+			CFrame.new(0, height * 0.85, sz * (spanZ / 2 - 0.35)),
 			{ Color = P.HullShade }
 		)
 		glow(
 			model,
 			"EdgeLight",
 			Vector3.new(spanX - 2.4, 0.16, 0.26),
-			CFrame.new(0, height * 0.8, sz * (spanZ / 2 - 1))
+			CFrame.new(0, height * 0.76, sz * (spanZ / 2 - 1))
 		)
 	end
 
-	corners(model, spanX, spanZ, height * 0.85, 1.2)
+	-- Lowered from 0.85 to 0.76 of the height: the bolts were floating a
+	-- twentieth of a stud above the tread AND their caps sat in the edge
+	-- light's plane. At 0.76 they are seated in the tread and clear of it.
+	corners(model, spanX, spanZ, height * 0.76, 1.2)
 end
 
 -- Logistics -----------------------------------------------------------
@@ -850,11 +873,15 @@ BUILDERS.Conduit = function(model, spanX, spanZ, height)
 		Color = P.Hull,
 	})
 
+	-- Set BACK from the pipe's end rather than flush with it. Flush, the
+	-- flange's outer disc and the pipe's shared one plane, and the two colours
+	-- fought for it -- the flicker at the joint of every conduit in a run.
+	-- Recessed, the pipe's mouth reads as protruding through the flange.
 	for _, sx in { -1, 1 } do
 		piece(model, "Flange", {
 			Shape = Enum.PartType.Cylinder,
 			Size = Vector3.new(0.7, bore * 1.24, bore * 1.24),
-			CFrame = CFrame.new(sx * (spanX / 2 - 0.35), axis + bore / 2, 0),
+			CFrame = CFrame.new(sx * (spanX / 2 - 0.43), axis + bore / 2, 0),
 			Color = P.Frame,
 		})
 	end
@@ -870,7 +897,11 @@ BUILDERS.Conduit = function(model, spanX, spanZ, height)
 		P.Copper
 	)
 
-	glow(model, "Flow", Vector3.new(spanX - 1.8, 0.22, 0.6), CFrame.new(0, height - 0.15, 0))
+	-- Raised so the strip's top face clears the pipe's crown instead of
+	-- skimming a hundredth of a stud under it. Skimming, a flat face and a
+	-- cylinder meet at a grazing angle and shimmer along the whole run --
+	-- this was the conduit's most visible artefact, on its brightest part.
+	glow(model, "Flow", Vector3.new(spanX - 1.8, 0.22, 0.6), CFrame.new(0, height - 0.04, 0))
 
 	upright(model, "Valve", 1.1, 0.4, CFrame.new(spanX * 0.16, height + 0.1, 0), {
 		Color = P.Thruster,
@@ -930,7 +961,7 @@ BUILDERS.SolarPanel = function(model, spanX, spanZ, height)
 			model,
 			"Brace",
 			(tilt * CFrame.new(sx * spanX * 0.3, -0.2, 0)).Position,
-			Vector3.new(sx * spanX * 0.16, base + height * 0.4, 0),
+			Vector3.new(sx * spanX * 0.16, base + height * 0.44, 0),
 			0.24,
 			P.HullDark
 		)
@@ -1284,8 +1315,10 @@ BUILDERS.Smelter = function(model, spanX, spanZ, height)
 		CanQuery = false,
 	})
 	lamp(door, P.Heat)
+	-- Deep enough to stand clear of the furnace's face. At 0.3 the frame
+	-- stopped five thousandths of a stud short of it and the two fought.
 	piece(model, "DoorFrame", {
-		Size = Vector3.new(spanX * 0.42, body * 0.5, 0.3),
+		Size = Vector3.new(spanX * 0.42, body * 0.5, 0.6),
 		CFrame = CFrame.new(0, base + body * 0.3, spanZ * 0.39),
 		Color = P.Frame,
 		CanQuery = false,
@@ -1320,12 +1353,14 @@ BUILDERS.Smelter = function(model, spanX, spanZ, height)
 			{ Color = P.HullDark }
 		)
 	end
+	-- Seated below the stack's mouth rather than level with it: level, the
+	-- cap's lid and the chimney's shared a plane and the stack top flickered.
 	upright(
 		model,
 		"ChimneyCap",
 		spanX * 0.32,
 		0.5,
-		CFrame.new(spanX * 0.2, height - 0.25, -spanZ * 0.2),
+		CFrame.new(spanX * 0.2, height - 0.32, -spanZ * 0.2),
 		{
 			Color = P.Frame,
 		}
@@ -1402,11 +1437,13 @@ BUILDERS.Fabricator = function(model, spanX, spanZ, height)
 
 	-- Two gantries over the bay, plus the rail they would run on.
 	for _, sx in { -1, 1 } do
+		-- Outboard of 0.31: there the gantry's inner face cut the shell's
+		-- filleted corner a twentieth of a stud in, which shimmers up the join.
 		rounded(
 			model,
 			"Gantry",
 			Vector3.new(1, body * 0.95, spanZ * 0.88),
-			CFrame.new(sx * spanX * 0.31, base + body * 0.5, 0),
+			CFrame.new(sx * spanX * 0.33, base + body * 0.5, 0),
 			{ Color = P.Frame }
 		)
 		pipeBetween(
@@ -1441,7 +1478,9 @@ BUILDERS.Fabricator = function(model, spanX, spanZ, height)
 	})
 
 	corners(model, spanX * 0.86, spanZ * 0.86, height - 0.1, 0.7)
-	statusRow(model, CFrame.new(spanX * 0.3, base + body * 0.25, spanZ * 0.42), 4, P.Status)
+	-- Inboard of the gantry rather than across its edge, where two pips sat a
+	-- fortieth of a stud off its face.
+	statusRow(model, CFrame.new(spanX * 0.16, base + body * 0.25, spanZ * 0.42), 4, P.Status)
 end
 
 -- Commerce ------------------------------------------------------------
@@ -1453,23 +1492,32 @@ BUILDERS.CargoBay = function(model, spanX, spanZ, height)
 	local base = plinth(model, spanX, spanZ)
 	local body = height - base
 
+	-- 0.175 back and not 0.18: at 0.18 the hangar's back wall stood fifteen
+	-- thousandths of a stud inside the deck's edge, and the filleted corner
+	-- grazed it -- a flickering hairline where the hull meets the plinth.
 	rounded(
 		model,
 		"Hangar",
 		Vector3.new(spanX * 0.86, body, spanZ * 0.58),
-		CFrame.new(0, base + body / 2, -spanZ * 0.18),
+		CFrame.new(0, base + body / 2, -spanZ * 0.175),
 		{ Color = P.Hull }
 	)
 	-- An arched roof over the bay. A hangar is the one building on the station
 	-- with a real-world shape everybody already knows, and the arch is that
 	-- shape -- it does more for "this is where the ships dock" than any amount
 	-- of hazard paint on the apron.
+	--
+	-- The arch OVERHANGS the hull it caps, and is a hair shorter than it.
+	-- Built to the hangar's own depth it was exactly tangent to both long
+	-- walls and its end discs shared a plane with them: a shimmering line
+	-- down each side and a fighting half-disc at each end. An eave has to
+	-- clear what it covers, the same way the kerb clears the corridor floor.
 	barrel(
 		model,
 		"Vault",
-		spanX * 0.86,
-		spanZ * 0.58,
-		CFrame.new(0, base + body, -spanZ * 0.18),
+		spanX * 0.86 - 0.12,
+		spanZ * 0.62,
+		CFrame.new(0, base + body, -spanZ * 0.175),
 		{ Color = P.HullShade }
 	)
 	-- Ribs across the arch, in the same spirit as the seams on a flat hull: an
@@ -1479,14 +1527,14 @@ BUILDERS.CargoBay = function(model, spanX, spanZ, height)
 			model,
 			"VaultRib",
 			0.4,
-			spanZ * 0.61,
-			CFrame.new(index * spanX * 0.26, base + body, -spanZ * 0.18),
+			spanZ * 0.635,
+			CFrame.new(index * spanX * 0.26, base + body, -spanZ * 0.175),
 			{ Color = P.Frame, CanQuery = false }
 		)
 	end
 	faceSeams(
 		model,
-		CFrame.new(0, base + body * 0.5, -spanZ * 0.47) * CFrame.Angles(0, math.rad(180), 0),
+		CFrame.new(0, base + body * 0.5, -spanZ * 0.465) * CFrame.Angles(0, math.rad(180), 0),
 		spanX * 0.78,
 		body * 0.7,
 		4
@@ -1523,10 +1571,13 @@ BUILDERS.CargoBay = function(model, spanX, spanZ, height)
 	)
 
 	-- Hazard strip on the apron, where a crate would be set down.
+	-- Thin and half sunk into the deck, so it reads as paint. At 0.14 proud
+	-- the strips stood level with the crates' chamfered feet and the two tops
+	-- fought wherever a crate was set down on one.
 	for index = 0, 4 do
 		piece(model, "Hazard", {
-			Size = Vector3.new(spanX * 0.12, 0.14, spanZ * 0.22),
-			CFrame = CFrame.new((index - 2) * spanX * 0.16, base + 0.07, spanZ * 0.34),
+			Size = Vector3.new(spanX * 0.12, 0.1, spanZ * 0.22),
+			CFrame = CFrame.new((index - 2) * spanX * 0.16, base + 0.01, spanZ * 0.34),
 			Color = if index % 2 == 0 then P.Hazard else P.Seam,
 			Material = Enum.Material.SmoothPlastic,
 			CanQuery = false,
@@ -1546,7 +1597,9 @@ BUILDERS.CargoBay = function(model, spanX, spanZ, height)
 	local crates = {
 		{ x = 0.3, y = 0, z = 0.3, turn = 8 },
 		{ x = 0.3, y = 1, z = 0.28, turn = -14 },
-		{ x = 0.18, y = 0, z = 0.36, turn = 26 },
+		-- Pulled in from 0.18: at 0.18 this crate and the bottom of the stack
+		-- overlapped by three tenths of a stud and visibly cut into each other.
+		{ x = 0.12, y = 0, z = 0.36, turn = 26 },
 	}
 	for index, crate in crates do
 		chamfered(
@@ -1562,7 +1615,9 @@ BUILDERS.CargoBay = function(model, spanX, spanZ, height)
 		)
 	end
 
-	statusRow(model, CFrame.new(-spanX * 0.3, base + body * 0.55, spanZ * 0.12), 4, P.Status)
+	-- Moved onto the door, between two slats. Off to the side it straddled the
+	-- door's edge with a hundredth of a stud between the two front faces.
+	statusRow(model, CFrame.new(-spanX * 0.12, base + body * 0.475, spanZ * 0.11 + 0.27), 4, P.Status)
 end
 
 ----------------------------------------------------------------------
@@ -1738,7 +1793,9 @@ local function tierHardware(
 		-- under a hemisphere -- rather than the boxes this tier used to be.
 		for _, sx in { -1, 1 } do
 			for _, sz in { -1, 1 } do
-				local x, z = sx * (spanX / 2 - 0.7), sz * (spanZ / 2 - 0.7)
+				-- 0.78 in from the edge, not 0.7: at 0.7 the post overhung the
+				-- deck plate by a hundredth of a stud and grazed its side face.
+				local x, z = sx * (spanX / 2 - 0.78), sz * (spanZ / 2 - 0.78)
 				upright(model, "TierPost", 0.52, 1.4, CFrame.new(x, 0.75 + 0.7, z), {
 					Color = P.Frame,
 					CanQuery = false,
@@ -1755,20 +1812,25 @@ local function tierHardware(
 	if level >= 3 then
 		-- A collar lifting off the plinth, in two steps rather than one slab.
 		-- Two diameters read as a turned fitting; one reads as a coaster.
+		-- The two diameters were 0.94 and 0.82 of the span, which is exactly
+		-- where a hangar's wall, a fabricator's shell and a smelter's door
+		-- happen to stand: the collar came out tangent to the hull it lifts
+		-- off, and a tangent cylinder shimmers along the whole contact line.
+		-- Narrower, and lifted a little, they touch nothing edge on.
 		upright(
 			model,
 			"TierCollar",
-			math.min(spanX, spanZ) * 0.94,
+			math.min(spanX, spanZ) * 0.90,
 			0.26,
-			CFrame.new(0, 1.03, 0),
+			CFrame.new(0, 1.10, 0),
 			{ Color = P.HullDark, CanQuery = false }
 		)
 		upright(
 			model,
 			"TierCollarStep",
-			math.min(spanX, spanZ) * 0.82,
+			math.min(spanX, spanZ) * 0.74,
 			0.24,
-			CFrame.new(0, 1.26, 0),
+			CFrame.new(0, 1.32, 0),
 			{ Color = P.Frame, CanQuery = false }
 		)
 	end
@@ -1793,15 +1855,14 @@ local function tierHardware(
 				Color = P.HullShade,
 				CanQuery = false,
 			})
+			-- Placed in the vane's OWN frame rather than at its own radius. At
+			-- a radius the offset scaled with the span, so on a 1x1 module the
+			-- strip came out level with the vane's face instead of proud of it.
 			glow(
 				model,
 				"TierVaneEdge",
 				Vector3.new(0.14, height * 0.3, 0.2),
-				CFrame.new(
-					math.cos(angle) * spanX * 0.44,
-					height * 0.34,
-					math.sin(angle) * spanZ * 0.44
-				) * CFrame.Angles(0, -angle, math.rad(14))
+				at * CFrame.new(0.2, 0, 0)
 			)
 		end
 	end

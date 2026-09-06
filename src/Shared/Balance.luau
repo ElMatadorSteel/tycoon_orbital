@@ -136,6 +136,10 @@ local Balance = {
 		-- block. Shorter than the old per-vein cooldown (4s) because
 		-- blocks are disposable (dug once, gone), not fixtures.
 		DigCooldown = 1,
+		-- How long the button has to be held on one block before it breaks.
+		-- Pressure rather than clicks: the client counts this down and draws
+		-- the ring, DigCooldown stays the server's own floor underneath it.
+		DigDuration = 3,
 		Backpack = {
 			Capacity = 50,
 		},
