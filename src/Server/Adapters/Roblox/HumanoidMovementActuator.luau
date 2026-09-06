@@ -20,8 +20,11 @@ local Players = game:GetService("Players")
 local HumanoidMovementActuator = {}
 HumanoidMovementActuator.__index = HumanoidMovementActuator
 
-function HumanoidMovementActuator.new()
-	local self = setmetatable({ _speeds = {} :: { [number]: number } }, HumanoidMovementActuator)
+function HumanoidMovementActuator.new(defaultSpeed: number?)
+	local self = setmetatable({
+		_speeds = {} :: { [number]: number },
+		_default = defaultSpeed or 16,
+	}, HumanoidMovementActuator)
 
 	local function watch(player: Player)
 		player.CharacterAdded:Connect(function(character: Model)
@@ -30,9 +33,8 @@ function HumanoidMovementActuator.new()
 			-- AFTER the wait, so a reset issued meanwhile still wins.
 			task.spawn(function()
 				local humanoid = character:WaitForChild("Humanoid", 5)
-				local speed = self._speeds[player.UserId]
-				if humanoid and speed then
-					(humanoid :: Humanoid).WalkSpeed = speed
+				if humanoid then
+					(humanoid :: Humanoid).WalkSpeed = self._speeds[player.UserId] or self._default
 				end
 			end)
 		end)

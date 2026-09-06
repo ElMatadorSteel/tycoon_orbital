@@ -40,6 +40,10 @@ local Balance = {
 		CoreUpgradeCost = 375,
 	},
 
+	-- Base walk speed applied to every character on spawn. Roblox stock is
+	-- 16; doubled here so the station feels less sluggish at full build.
+	WalkSpeed = 32,
+
 	-- Dev-mode-only numbers -- never read outside `development` (see
 	-- Composition/Container.luau's flag), no bearing on real balance.
 	Dev = {
@@ -51,7 +55,7 @@ local Balance = {
 		-- wall is deep, and walks straight through it (ARCHITECTURE.md's
 		-- "tunnelling is a physics problem"). Raise it knowingly.
 		WalkSpeed = {
-			Default = 16,
+			Default = 32,
 			Min = 8,
 			Max = 200,
 		},

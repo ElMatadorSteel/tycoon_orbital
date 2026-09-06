@@ -168,7 +168,7 @@ function Bootstrap.start()
 
 	-- Watches PlayerAdded itself, so it must exist before anyone can join:
 	-- built here rather than lazily on the first dev command.
-	local movementActuator = HumanoidMovementActuator.new()
+	local movementActuator = HumanoidMovementActuator.new(Balance.WalkSpeed)
 
 	local container = Container.new({
 		ports = {
