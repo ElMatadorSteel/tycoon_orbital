@@ -1,23 +1,14 @@
 --!strict
--- One-time unlock: spend credits, flip profile.unlocked.ResearchMine on,
--- open the zone. Same load -> validate -> spend -> save -> publish shape as
--- PurchaseRailgun, which this deliberately mirrors -- the one addition is
--- telling the scene builder to actually open the pit (or flash the pad red
--- on a refusal), since unlike the Railgun there is no separate dispenser
--- step: unlocking IS receiving the thing.
+-- One-time unlock: spend credits, flip profile.unlocked.ResearchMine on, and
+-- build the extension the pad opens. Triggered by walking onto the pad at
+-- the edge of one's own deck -- StationSceneBuilder fires the signal,
+-- Composition/Bootstrap connects it to this.
 --
--- Triggered by StationSceneBuilder's researchPadTouched Signal (see
--- Composition/Bootstrap.luau), not by a RemoteFunction: the pad is a walk-
--- onto trigger, same as the legacy LaunchPad, not a client-initiated
--- purchase like the Railgun's pad -- there is no player-facing failure
--- message to show beyond the pad itself flashing red.
-
--- fromShared(path) reaches ReplicatedStorage.Shared directly: Rojo maps
--- src/Server and src/Shared to different service roots with no common
--- ancestor a relative "../.." path can reach -- confirmed the first time
--- Rojo actually connected Studio (see CLAUDE.md's cutover notes). Lune has
--- no `game`, so the fallback below -- an ordinary relative require -- is
--- what actually runs there, unchanged from before.
+-- Shaped on PurchaseRailgun, with one addition: the refusal is visible.
+-- Buying the Railgun happens at a prompt the player pressed, so a Result is
+-- answer enough; a tycoon pad is something you walk across by accident, and
+-- "nothing happened" is indistinguishable from a broken pad unless the pad
+-- itself says otherwise.
 local function fromShared(path: string): any
 	if game then
 		local node: any = (game :: any):GetService("ReplicatedStorage").Shared
@@ -49,9 +40,10 @@ UnlockResearchMine.__index = UnlockResearchMine
 function UnlockResearchMine:run(userId: number): Result<nil, string>
 	local profile = self.profileRepository:load(userId)
 
+	-- Standing on an already-open pad. Not a refusal worth showing: the mine
+	-- behind it is the answer.
 	if ResearchMine.isUnlocked(profile.unlocked) then
-		self.sceneBuilder:refuseResearchMine(userId)
-		return Result.err("recherche déjà débloquée")
+		return Result.err("research mine already unlocked")
 	end
 
 	local spend = Credits.spend(profile.credits, self.researchRules.cost)
@@ -60,13 +52,19 @@ function UnlockResearchMine:run(userId: number): Result<nil, string>
 		return spend
 	end
 
+	-- Paid and persisted before anything is built. The geometry is derived
+	-- from the profile (RestoreStation rebuilds it on every reconnection),
+	-- so a mine that failed to build is a cosmetic loss for one session --
+	-- whereas a mine built against a save that never landed is a mine the
+	-- player paid for twice.
 	profile.credits = spend.value
 	profile.unlocked[ResearchMine.UnlockId] = true
 	self.profileRepository:save(userId, profile)
 
+	self.sceneBuilder:buildResearchMine(userId)
+
 	self.statsPublisher:publish(userId, Snapshot.credits(profile.credits))
 	self.statsPublisher:publish(userId, Snapshot.research(true))
-	self.sceneBuilder:buildResearchMine(userId)
 
 	return Result.ok(nil)
 end
