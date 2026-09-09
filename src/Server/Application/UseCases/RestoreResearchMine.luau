@@ -28,6 +28,8 @@ local function fromShared(path: string): any
 end
 
 local ResearchMine = require(fromShared("Domain/Research/ResearchMine"))
+local Drill = require(fromShared("Domain/Research/Drill"))
+local Shovel = require(fromShared("Domain/Research/Shovel"))
 local MineGrid = require(fromShared("Domain/Research/MineGrid"))
 
 export type Dependencies = {
@@ -48,6 +50,17 @@ function RestoreResearchMine:run(userId: number)
 	end
 
 	self.sceneBuilder:buildResearchMine(userId)
+
+	-- The zone is rebuilt from scratch: mark pads that were already paid for
+	-- in a previous session, so they show the unlocked state rather than the
+	-- default "Inactive" / cost subtitle.
+	if Drill.isUnlocked(profile.unlocked) then
+		self.sceneBuilder:markDrillUnlocked(userId)
+	end
+	if Shovel.isUnlocked(profile.unlocked) then
+		self.sceneBuilder:markShovelUnlocked(userId)
+		self.sceneBuilder:grantShovel(userId)
+	end
 
 	-- Ensure the mine grid exists and is fresh.
 	local now = self.clock:now()
