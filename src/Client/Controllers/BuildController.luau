@@ -958,6 +958,10 @@ function BuildController:_onInput(input: InputObject, gameProcessed: boolean)
 	end
 end
 
+function BuildController:Panel()
+	return self._panel
+end
+
 function BuildController:Start()
 	local gui = Instance.new("ScreenGui")
 	gui.Name = "BuildUI"
