@@ -186,7 +186,7 @@ local SWING_SECONDS = 0.1 + 0.09 + 0.22
 -- as a bug, not as digging.
 local SWING_INTERVAL = SWING_SECONDS
 
-local SHOVEL_NAME = "Pelle"
+local SHOVEL_NAME = "Pioche"
 
 local function digAnimation(): Animation?
 	if not game then
@@ -499,7 +499,7 @@ function ResearchController:_mine(block: BasePart)
 		if result.oreId then
 			self:_toastMessage(`+1 {result.oreName}`, false)
 		else
-			self:_toastMessage("Terre", false)
+			self:_toastMessage("Roche", false)
 		end
 	else
 		if result == "cooldown" then

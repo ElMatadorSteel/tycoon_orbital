@@ -533,40 +533,40 @@ function ResearchMineBuilder.buildShovelPad(
 			(span / 2 + MINE_DISTANCE) + math.cos(angle) * radius
 		)
 
-	return padTile(parent, "ShovelPad", centre, "PELLE", money(cost), "Achetée")
+	return padTile(parent, "ShovelPad", centre, "PIOCHE", money(cost), "Achetée")
 end
 
 -- The tool itself. An authored model when one has been placed at
--- ReplicatedStorage.ResearchModels.Shovel -- same arrangement as the Drill
+-- ReplicatedStorage.ResearchModels.Pickaxe -- same arrangement as the Drill
 -- and the mineral clusters, and the same caveat (see drillTemplate's note:
 -- an authored asset lives only in the place file and cannot be rebuilt from
 -- the repository). The original stick-and-blade below is kept as the
--- fallback rather than deleted: a shovel is cheap enough to write that a
+-- fallback rather than deleted: a pickaxe is cheap enough to write that a
 -- missing asset should never leave the mine without one.
 function ResearchMineBuilder.buildShovelTool(): Tool
 	local tool = Instance.new("Tool")
-	tool.Name = "Pelle"
+	tool.Name = "Pioche"
 	tool.RequiresHandle = true
 	tool.CanBeDropped = false
-	tool.ToolTip = "Creuser un filon"
+	tool.ToolTip = "Miner de la roche"
 
-	local shovelFolder = if game
+	local pickaxeFolder = if game
 		then (game :: any):GetService("ReplicatedStorage"):FindFirstChild("ResearchModels")
 		else nil
-	local shovelTemplate = shovelFolder and shovelFolder:FindFirstChild("Shovel")
+	local pickaxeTemplate = pickaxeFolder and pickaxeFolder:FindFirstChild("Pickaxe")
 
 	if
-		shovelTemplate
-		and shovelTemplate:IsA("Model")
-		and shovelTemplate:FindFirstChild("Handle")
+		pickaxeTemplate
+		and pickaxeTemplate:IsA("Model")
+		and pickaxeTemplate:FindFirstChild("Handle")
 	then
-		local clone = shovelTemplate:Clone()
+		local clone = pickaxeTemplate:Clone()
 		local authored = clone:FindFirstChild("Handle") :: BasePart
 
 		-- Welded while the parts still sit at the offsets the model was
 		-- authored with -- a WeldConstraint freezes the offset its two parts
 		-- have at the moment it is enabled, so welding after moving anything
-		-- would bake in the wrong pose. Massless keeps a 4-stud shovel from
+		-- would bake in the wrong pose. Massless keeps a 4-stud pickaxe from
 		-- changing how the character walks.
 		for _, descendant in clone:GetDescendants() do
 			if descendant:IsA("BasePart") then
@@ -589,12 +589,12 @@ function ResearchMineBuilder.buildShovelTool(): Tool
 		end
 		clone:Destroy()
 
-		-- Held at the side, shaft upright, blade down by the feet. Found by
+		-- Held at the side, shaft upright, head down by the feet. Found by
 		-- looking at it in a running session rather than derived: the model's
-		-- long axis is its local Y and the blade hangs at -Y, so any rotation
-		-- about X lays the shovel flat like a rifle. A positive Grip.Y lowers
+		-- long axis is its local Y and the head hangs at -Y, so any rotation
+		-- about X lays the pickaxe flat like a rifle. A positive Grip.Y lowers
 		-- the tool, since Handle.CFrame = hand * Grip:Inverse().
-		tool.Grip = CFrame.new(0, 0.35, 0) * CFrame.Angles(math.rad(-12), 0, 0)
+		tool.Grip = CFrame.new(0, 0.35, 0) * CFrame.Angles(math.rad(-12), math.rad(90), 0)
 		return tool
 	end
 
@@ -608,7 +608,7 @@ function ResearchMineBuilder.buildShovelTool(): Tool
 
 	local blade = Instance.new("Part")
 	blade.Name = "Blade"
-	blade.Size = Vector3.new(1.9, 2.2, 0.25)
+	blade.Size = Vector3.new(2.8, 0.5, 0.25)
 	blade.Color = PALETTE.Structure
 	blade.Material = Enum.Material.Metal
 	blade.CanCollide = false

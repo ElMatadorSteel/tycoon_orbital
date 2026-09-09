@@ -695,14 +695,14 @@ function StationSceneBuilder:grantShovel(userId: number): boolean
 	end
 
 	local gear = player:FindFirstChildOfClass("StarterGear")
-	if gear and not gear:FindFirstChild("Pelle") then
+	if gear and not gear:FindFirstChild("Pioche") then
 		self._shovelTool:Clone().Parent = gear
 	end
 
 	local backpack = player:FindFirstChildOfClass("Backpack")
 	local character = player.Character
-	local held = (backpack and backpack:FindFirstChild("Pelle"))
-		or (character and character:FindFirstChild("Pelle"))
+	local held = (backpack and backpack:FindFirstChild("Pioche"))
+		or (character and character:FindFirstChild("Pioche"))
 	if backpack and not held then
 		self._shovelTool:Clone().Parent = backpack
 	end
