@@ -601,6 +601,66 @@ function ResearchController:_updateSurfaceButton()
 	self._surfaceBtn.Visible = root.Position.Y < pad.Position.Y + 8
 end
 
+----------------------------------------------------------------------
+-- Drill progress bar: a 3D bar above the drill model that fills from
+-- 0 to 1 over the drill's production interval, then resets. Entirely
+-- client-side: the interval is known from Balance, and visual-only
+-- drift is harmless -- the bar is a comfort indicator, not authority.
+
+function ResearchController:_findDrillProgressFill(): Frame?
+	local player = Players.LocalPlayer
+	local plots = workspace:FindFirstChild("Plots")
+	local zone = plots and plots:FindFirstChild(`ResearchMine_{player.UserId}`, true)
+	if not zone then
+		return nil
+	end
+	local drillSite = zone:FindFirstChild("DrillSite", true)
+	if not drillSite then
+		return nil
+	end
+	local barAnchor = drillSite:FindFirstChild("DrillBarAnchor")
+	if not barAnchor then
+		return nil
+	end
+	local gui = barAnchor:FindFirstChild("DrillProgressGui")
+	if not gui then
+		return nil
+	end
+	local track = gui:FindFirstChild("Track")
+	return track and track:FindFirstChild("Fill") :: Frame?
+end
+
+function ResearchController:_startDrillProgressLoop()
+	self._drillElapsed = 0
+
+	task.spawn(function()
+		while true do
+			local delta = RunService.Heartbeat:Wait()
+			local level = (State.get("DrillLevel") :: number?) or 0
+			local hasDrill = State.get("HasDrill") == true
+			if not hasDrill or level < 1 then
+				self._drillElapsed = 0
+				continue
+			end
+
+			local intervals = Balance.Research.Drill.Intervals
+			local interval = intervals[level] or intervals[#intervals]
+
+			self._drillElapsed = (self._drillElapsed or 0) + delta
+			if self._drillElapsed >= interval then
+				self._drillElapsed = self._drillElapsed % interval
+			end
+
+			local fill = self:_findDrillProgressFill()
+			if fill then
+				fill.Size = UDim2.fromScale(math.clamp(self._drillElapsed / interval, 0, 1), 1)
+			end
+		end
+	end)
+end
+
+----------------------------------------------------------------------
+
 function ResearchController:Start()
 	local gui = Instance.new("ScreenGui")
 	gui.Name = "ResearchUI"
@@ -666,6 +726,7 @@ function ResearchController:Start()
 	end)
 
 	self:_buildSurfaceButton(gui)
+	self:_startDrillProgressLoop()
 
 	UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessed: boolean)
 		if gameProcessed then

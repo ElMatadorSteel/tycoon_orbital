@@ -1027,6 +1027,53 @@ local function buildDrillSite(model: Model, origin: CFrame, centreZ: number)
 
 	pointLight(pad, PALETTE.Trim, 34, 1.8)
 	label(pad, "FOREUSE", subtitle, signHeight)
+
+	-- Progress bar: a second BillboardGui sitting below the sign, showing
+	-- how far the drill is through its current production cycle. Built
+	-- hidden; markUnlocked makes it visible.
+	local barAnchor = Instance.new("Part")
+	barAnchor.Name = "DrillBarAnchor"
+	barAnchor.Size = Vector3.new(0.2, 0.2, 0.2)
+	barAnchor.Transparency = 1
+	barAnchor.Anchored = true
+	barAnchor.CanCollide = false
+	barAnchor.CanQuery = false
+	barAnchor.CanTouch = false
+	barAnchor.CastShadow = false
+	barAnchor.CFrame = CFrame.new(pad.Position + Vector3.new(0, (signHeight or 5) - 2.5, 0))
+	barAnchor.Parent = pad
+
+	local barGui = Instance.new("BillboardGui")
+	barGui.Name = "DrillProgressGui"
+	barGui.Size = UDim2.fromScale(6, 0.5)
+	barGui.AlwaysOnTop = false
+	barGui.MaxDistance = 420
+	barGui.Adornee = barAnchor
+	barGui.Enabled = false
+	barGui.Parent = barAnchor
+
+	local track = Instance.new("Frame")
+	track.Name = "Track"
+	track.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+	track.BackgroundTransparency = 0.3
+	track.BorderSizePixel = 0
+	track.Size = UDim2.fromScale(1, 1)
+	track.Parent = barGui
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0.4, 0)
+	corner.Parent = track
+
+	local fill = Instance.new("Frame")
+	fill.Name = "Fill"
+	fill.BackgroundColor3 = PALETTE.PadOpen
+	fill.BorderSizePixel = 0
+	fill.Size = UDim2.fromScale(0, 1)
+	fill.Parent = track
+
+	local fillCorner = Instance.new("UICorner")
+	fillCorner.CornerRadius = UDim.new(0.4, 0)
+	fillCorner.Parent = fill
 end
 
 -- An invisible anchor at the pit bottom that carries the surface destination
@@ -1147,6 +1194,12 @@ function ResearchMineBuilder.markUnlocked(handle: PadHandle)
 	if detail and detail:IsA("TextLabel") then
 		detail.Text = handle.openText
 		detail.TextColor3 = PALETTE.PadOpen
+	end
+	-- Show the drill progress bar if this pad has one.
+	local barAnchor = handle.pad:FindFirstChild("DrillBarAnchor")
+	local barGui = barAnchor and barAnchor:FindFirstChild("DrillProgressGui")
+	if barGui then
+		barGui.Enabled = true
 	end
 end
 
