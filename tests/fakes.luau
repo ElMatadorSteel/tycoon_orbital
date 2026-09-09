@@ -150,7 +150,13 @@ function RecordingSceneBuilder:buildMineBlocks(_userId: number, _gridState: any)
 	return true
 end
 
-function RecordingSceneBuilder:removeMineBlock(_userId: number, _layer: number, _x: number, _y: number) end
+function RecordingSceneBuilder:removeMineBlock(
+	_userId: number,
+	_layer: number,
+	_x: number,
+	_y: number
+)
+end
 
 function RecordingSceneBuilder:grantShovel(_userId: number): boolean
 	return true
@@ -159,6 +165,10 @@ end
 function RecordingSceneBuilder:markShovelUnlocked(_userId: number) end
 
 function RecordingSceneBuilder:refuseShovel(_userId: number) end
+
+function RecordingSceneBuilder:markDrillUnlocked(_userId: number) end
+
+function RecordingSceneBuilder:refuseDrill(_userId: number) end
 
 -- A recording AsteroidField: doesn't touch any Instance (there is none
 -- under Lune), just records every call so a test can assert RunMiningTick/

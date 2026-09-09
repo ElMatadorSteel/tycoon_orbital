@@ -48,6 +48,7 @@ export type MiningSnapshot = { HasRailgun: boolean }
 export type ResearchSnapshot = { HasResearchMine: boolean }
 export type OreSnapshot = { [string]: number }
 export type ShovelSnapshot = { HasShovel: boolean }
+export type DrillSnapshot = { HasDrill: boolean, DrillLevel: number }
 export type ProductionSnapshot = {
 	Sunlight: number,
 	Efficiency: number,
@@ -117,6 +118,10 @@ end
 
 function Snapshot.shovel(hasShovel: boolean): ShovelSnapshot
 	return { HasShovel = hasShovel }
+end
+
+function Snapshot.drill(hasDrill: boolean, level: number): DrillSnapshot
+	return { HasDrill = hasDrill, DrillLevel = level }
 end
 
 function Snapshot.production(stats: {

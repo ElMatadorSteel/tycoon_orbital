@@ -109,7 +109,13 @@ export type SceneBuilder = {
 	-- Block-based mining grid: buildMineBlocks renders the grid state as
 	-- 3D block Parts inside the mine zone; removeMineBlock destroys one.
 	buildMineBlocks: (self: SceneBuilder, userId: number, gridState: any) -> boolean,
-	removeMineBlock: (self: SceneBuilder, userId: number, layer: number, x: number, y: number) -> (),
+	removeMineBlock: (
+		self: SceneBuilder,
+		userId: number,
+		layer: number,
+		x: number,
+		y: number
+	) -> (),
 	-- The shovel: putting the tool in the player's hands, and the two ways
 	-- its pad answers. grantShovel returns false when the player is not
 	-- connected -- the profile still carries the unlock, so the next join

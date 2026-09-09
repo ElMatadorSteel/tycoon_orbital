@@ -65,6 +65,7 @@ function SessionRegistry.new()
 		_researchMineBuilt = {} :: { [number]: boolean },
 		_veinCooldowns = {} :: { [number]: { [string]: number } },
 		_lastDig = {} :: { [number]: number },
+		_lastDrillTick = {} :: { [number]: number },
 	}, SessionRegistry)
 end
 
@@ -168,6 +169,14 @@ function SessionRegistry:setLastDig(userId: number, now: number)
 	self._lastDig[userId] = now
 end
 
+function SessionRegistry:lastDrillTick(userId: number): number
+	return self._lastDrillTick[userId] or -math.huge
+end
+
+function SessionRegistry:setLastDrillTick(userId: number, now: number)
+	self._lastDrillTick[userId] = now
+end
+
 -- Call on PlayerRemoving, once this is wired into a real bootstrap: nothing
 -- here should outlive the connection it belongs to.
 function SessionRegistry:release(userId: number)
@@ -181,6 +190,7 @@ function SessionRegistry:release(userId: number)
 	self._researchMineBuilt[userId] = nil
 	self._veinCooldowns[userId] = nil
 	self._lastDig[userId] = nil
+	self._lastDrillTick[userId] = nil
 end
 
 return SessionRegistry

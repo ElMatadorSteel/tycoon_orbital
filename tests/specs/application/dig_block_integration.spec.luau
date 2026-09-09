@@ -59,8 +59,14 @@ local RULES = {
 	},
 	asteroidLifetime = 8,
 	mineGrid = GRID_RULES,
-	backpackCapacity = 5,
 	digCooldown = 1,
+	drill = {
+		cost = 1500,
+		maxLevel = 10,
+		intervals = { 12, 10, 8, 6.5, 5, 4, 3.2, 2.5, 2, 1.5 },
+		dropTable = { { { id = "Iron", weight = 100 } } },
+		upgradeCosts = { { Iron = 15 } },
+	},
 }
 
 local STARTING_CREDITS = 100000
@@ -176,21 +182,18 @@ describe("DigBlock (real Container, fake ports)", function()
 		expect(result.ok).toBeTruthy()
 	end)
 
-	it("refuses when backpack is full but still digs the block", function()
+	it("collects ore without capacity limit", function()
 		unlockMine()
-		-- Fill the backpack manually (capacity = 5)
 		local profile = profileRepository:load(userId)
-		profile.ores.Iron = 5
+		profile.ores.Iron = 500
 		profileRepository:save(userId, profile)
 
 		clock:setMonotonic(10)
 		local result = container.useCases.digBlock:run(userId, 1, 0, 0)
 		expect(result.ok).toBeTruthy()
-		-- Block is consumed (dug)
-		expect(result.value.bagFull).toBe(true)
-		-- Ore count unchanged (could not pick up)
+		-- Ore is always collected, no capacity limit
 		local reloaded = profileRepository:load(userId)
-		expect(reloaded.ores.Iron).toBe(5)
+		expect(reloaded.ores.Iron >= 500).toBeTruthy()
 	end)
 
 	it("refuses out-of-bounds coordinates", function()

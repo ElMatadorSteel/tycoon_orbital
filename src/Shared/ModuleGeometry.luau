@@ -622,7 +622,14 @@ BUILDERS.Core = function(model, spanX, spanZ, height)
 	-- open, and at the old heights a rung's lid landed a hundredth of a stud
 	-- off a ring's -- two flickering bands on the tower everything else on
 	-- the plot is read against.
-	upright(model, "Collar", spanX * 0.76, 0.95, CFrame.new(0, base + 0.475, 0), { Color = P.Frame })
+	upright(
+		model,
+		"Collar",
+		spanX * 0.76,
+		0.95,
+		CFrame.new(0, base + 0.475, 0),
+		{ Color = P.Frame }
+	)
 	upright(model, "Belt", spanX * 0.7, 0.5, CFrame.new(0, base + drum * 0.4, 0), {
 		Color = P.HullDark,
 	})
@@ -1617,7 +1624,12 @@ BUILDERS.CargoBay = function(model, spanX, spanZ, height)
 
 	-- Moved onto the door, between two slats. Off to the side it straddled the
 	-- door's edge with a hundredth of a stud between the two front faces.
-	statusRow(model, CFrame.new(-spanX * 0.12, base + body * 0.475, spanZ * 0.11 + 0.27), 4, P.Status)
+	statusRow(
+		model,
+		CFrame.new(-spanX * 0.12, base + body * 0.475, spanZ * 0.11 + 0.27),
+		4,
+		P.Status
+	)
 end
 
 ----------------------------------------------------------------------

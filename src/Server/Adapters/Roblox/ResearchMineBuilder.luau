@@ -223,7 +223,8 @@ local function decorateFragments(block: BasePart, colour: Color3, count: number,
 		local ox = (hash(i + 1, count) - 0.5) * s * 0.7
 		local oz = (hash(i + 2, count) - 0.5) * s * 0.7
 		-- Sit flush: block top is at +s/2, fragment centre at +s/2 + h/2
-		frag.CFrame = block.CFrame * CFrame.new(ox, s / 2 + h / 2, oz)
+		frag.CFrame = block.CFrame
+			* CFrame.new(ox, s / 2 + h / 2, oz)
 			* CFrame.Angles(0, hash(i + 4, count) * math.pi, 0)
 
 		local weld = Instance.new("WeldConstraint")
@@ -1075,9 +1076,7 @@ function ResearchMineBuilder.buildZone(parent: Instance, origin: CFrame, span: n
 	part(model, "Bedrock", {
 		Shape = Enum.PartType.Cylinder,
 		Size = Vector3.new(2, FLOOR_RADIUS * 2, FLOOR_RADIUS * 2),
-		CFrame = origin
-			* CFrame.new(0, bedrockY - 1, centreZ)
-			* CFrame.Angles(0, 0, math.rad(90)),
+		CFrame = origin * CFrame.new(0, bedrockY - 1, centreZ) * CFrame.Angles(0, 0, math.rad(90)),
 		Color = PALETTE.RockDark,
 	})
 

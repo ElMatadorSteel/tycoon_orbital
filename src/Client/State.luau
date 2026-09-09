@@ -57,6 +57,8 @@ local WATCHED = {
 	"HasRailgun",
 	"HasResearchMine",
 	"HasShovel",
+	"HasDrill",
+	"DrillLevel",
 }
 
 -- One attribute per mineral, appended from the catalogue rather than typed

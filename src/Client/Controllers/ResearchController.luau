@@ -355,7 +355,14 @@ function ResearchController:_buildDigRing(gui: ScreenGui)
 
 	local centre = UDim2.fromScale(0.5, 0.5)
 	-- Rim, then track, then the sweep on top of both.
-	ringCircle(root, centre, COLORS.Outline, RING_THICKNESS + RING_RIM * 2, RING_RIM_TRANSPARENCY, 10)
+	ringCircle(
+		root,
+		centre,
+		COLORS.Outline,
+		RING_THICKNESS + RING_RIM * 2,
+		RING_RIM_TRANSPARENCY,
+		10
+	)
 	ringCircle(root, centre, RING_TRACK, RING_THICKNESS, RING_TRACK_TRANSPARENCY, 11)
 
 	self._digSweepRight = ringSweep(root, true)
@@ -490,7 +497,7 @@ function ResearchController:_mine(block: BasePart)
 	local ok, result = Net.DigBlock:InvokeServer(layer, bx, by)
 	if ok then
 		if result.oreId then
-			self:_toastMessage(`+1 {result.oreName} ({result.newCount or "?"} au total)`, false)
+			self:_toastMessage(`+1 {result.oreName}`, false)
 		else
 			self:_toastMessage("Terre", false)
 		end
@@ -618,6 +625,10 @@ function ResearchController:Start()
 		Net.SellOres:InvokeServer(oreId)
 	end
 
+	panel.onUpgradeDrill = function()
+		Net.UpgradeDrill:InvokeServer()
+	end
+
 	local buildPanel = BuildController:Panel()
 	if buildPanel then
 		buildPanel.onResearchRequested = function()
@@ -630,6 +641,7 @@ function ResearchController:Start()
 
 	local function seed()
 		panel:SetUnlocked(State.get("HasResearchMine") == true)
+		panel:SetDrill(State.get("HasDrill") == true, (State.get("DrillLevel") :: number?) or 0)
 		for _, ore in OreCatalog.Ores do
 			panel:SetOre(ore.id, (State.get(`Ore{ore.id}`) :: number?) or 0)
 		end
@@ -639,6 +651,8 @@ function ResearchController:Start()
 	State.Changed:Connect(function(key: string, value: any)
 		if key == "HasResearchMine" then
 			panel:SetUnlocked(value == true)
+		elseif key == "HasDrill" or key == "DrillLevel" then
+			panel:SetDrill(State.get("HasDrill") == true, (State.get("DrillLevel") :: number?) or 0)
 		elseif key == "Location" then
 			if value ~= "Station" then
 				panel:Close()

@@ -253,8 +253,22 @@ Theme.Words = {
 		end,
 		-- The sections the panel does not fill yet. Named rather than left
 		-- blank so the shape of what is coming is visible in one place.
+		DrillTitle = "Foreuse",
+		DrillLocked = "Achète la foreuse dans la mine pour miner passivement.",
+		DrillLevel = function(level: number): string
+			return `Nv. {level}`
+		end,
+		DrillMaxLevel = "Niveau max",
+		DrillUpgrade = "Améliorer",
+		DrillUpgradeCost = function(costs: { [string]: number }): string
+			local parts = {}
+			for id, count in costs do
+				table.insert(parts, `{count}x {id}`)
+			end
+			return table.concat(parts, ", ")
+		end,
 		SoonTitle = "Bientôt",
-		Soon = "Foreuse, raffinage et réparation de la fusée.",
+		Soon = "Raffinage et réparation de la fusée.",
 	},
 
 	EclipseIncoming = function(seconds: number): string

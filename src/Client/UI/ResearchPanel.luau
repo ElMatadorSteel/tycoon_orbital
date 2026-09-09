@@ -39,6 +39,7 @@ local function fromShared(path: string): any
 	return "../../Shared/" .. path
 end
 
+local Balance = require(fromShared("Balance"))
 local OreCatalog = require(fromShared("Domain/Research/OreCatalog"))
 local Rarity = require(fromShared("Domain/Research/Rarity"))
 local Icons = require(fromShared("Icons"))
@@ -54,7 +55,7 @@ local WORDS = Theme.Words.Research
 -- the footer AND the panel's own xl padding on both edges (172 in total), so
 -- 400 leaves 228 for two rows of 102 with their 10 of gap. Anything less
 -- scrolls a bag that has nothing to scroll.
-local PANEL = Vector2.new(600, 400)
+local PANEL = Vector2.new(600, 455)
 local HEADER_ICON = 44
 local FOOTER_HEIGHT = Theme.Control.md
 
@@ -66,6 +67,7 @@ local SLOT = 102
 local SLOT_GAP = 10
 local SLOT_PAD = 5
 local BAND = 20
+local DRILL_BAR_HEIGHT = 42
 
 local ResearchPanel = {}
 ResearchPanel.__index = ResearchPanel
@@ -241,9 +243,13 @@ function ResearchPanel.new(parent: Instance): ResearchPanel
 
 	-- (oreId: string?) -> () -- nil means the whole bag.
 	self.onSell = nil :: ((string?) -> ())?
+	-- () -> () -- upgrade the drill.
+	self.onUpgradeDrill = nil :: (() -> ())?
 
 	self._open = false
 	self._unlocked = false
+	self._hasDrill = false
+	self._drillLevel = 0
 	self._counts = {} :: { [string]: number }
 	self._slots = {} :: { [string]: any }
 
@@ -324,7 +330,7 @@ function ResearchPanel.new(parent: Instance): ResearchPanel
 	})
 
 	local listTop = HEADER_ICON + SPACE.lg
-	local listBottom = FOOTER_HEIGHT + SPACE.lg
+	local listBottom = FOOTER_HEIGHT + SPACE.lg + DRILL_BAR_HEIGHT + SPACE.sm
 
 	self._grid = Theme.new("ScrollingFrame", {
 		Name = "Bag",
@@ -368,6 +374,58 @@ function ResearchPanel.new(parent: Instance): ResearchPanel
 	for index = #OreCatalog.Ores + 1, SLOTS do
 		buildEmptySlot(index).Parent = self._grid
 	end
+
+	-- Drill bar: level label on the left, upgrade button on the right.
+	self._drillLabel = Theme.body({
+		Name = "DrillLabel",
+		Size = UDim2.new(0.5, 0, 1, 0),
+		BackgroundTransparency = 1,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = FUNCTION.Research,
+		Text = WORDS.DrillLocked,
+	})
+
+	local upgradeLabel = Theme.body({
+		Size = UDim2.fromScale(1, 1),
+		Text = WORDS.DrillUpgrade,
+	})
+	self._drillUpgrade = Theme.chunky({
+		Name = "DrillUpgrade",
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, 0, 0.5, 0),
+		Size = UDim2.fromOffset(200, 34),
+		BackgroundColor3 = FUNCTION.Research,
+		Radius = Theme.Radius.md,
+		Inner = true,
+		Plate = UIPack.Plate.Blue,
+		PlateTint = false,
+	}, { upgradeLabel })
+
+	self._drillCost = Theme.caption({
+		Name = "DrillCost",
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, 0, 1, -1),
+		Size = UDim2.new(0.5, 0, 0, 14),
+		BackgroundTransparency = 1,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		TextColor3 = COLORS.TextDim,
+		Text = "",
+	})
+
+	self._drillBar = Theme.new("Frame", {
+		Name = "DrillBar",
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.new(0, 0, 1, -(FOOTER_HEIGHT + SPACE.lg + SPACE.sm)),
+		Size = UDim2.new(1, 0, 0, DRILL_BAR_HEIGHT),
+		BackgroundTransparency = 1,
+		Visible = false,
+	}, { self._drillLabel, self._drillUpgrade.Root, self._drillCost })
+
+	self._drillUpgrade.Face.Activated:Connect(function()
+		if self.onUpgradeDrill then
+			self.onUpgradeDrill()
+		end
+	end)
 
 	self._total = Theme.body({
 		Name = "Total",
@@ -440,6 +498,7 @@ function ResearchPanel.new(parent: Instance): ResearchPanel
 		header,
 		self._locked,
 		self._grid,
+		self._drillBar,
 		self._total,
 		self._sellAll.Root,
 		self._close.Root,
@@ -476,6 +535,7 @@ function ResearchPanel:_refresh()
 	self._grid.Visible = self._unlocked
 	self._total.Visible = self._unlocked
 	self._sellAll.Root.Visible = self._unlocked
+	self._drillBar.Visible = self._unlocked
 
 	-- One line, two jobs. An empty bag showing "Valeur totale : 0 ¢" states
 	-- the obvious and helps nobody, and the old overlay that said so instead
@@ -490,11 +550,59 @@ function ResearchPanel:_refresh()
 		-- belongs in it, which is half of what the bag is for.
 		slot.SetCarried(count > 0)
 	end
+
+	-- Drill bar state.
+	if not self._hasDrill then
+		self._drillLabel.Text = WORDS.DrillLocked
+		self._drillUpgrade.Root.Visible = false
+		self._drillCost.Visible = false
+	else
+		local level = self._drillLevel
+		local maxLevel = Balance.Research.Drill.MaxLevel
+		if level >= maxLevel then
+			self._drillLabel.Text =
+				`{WORDS.DrillTitle} {WORDS.DrillLevel(level)} — {WORDS.DrillMaxLevel}`
+			self._drillUpgrade.Root.Visible = false
+			self._drillCost.Visible = false
+		else
+			self._drillLabel.Text = `{WORDS.DrillTitle} {WORDS.DrillLevel(level)}`
+			self._drillUpgrade.Root.Visible = true
+			self._drillCost.Visible = true
+			local costs = Balance.Research.Drill.UpgradeCosts[level]
+			if costs then
+				-- Build cost string with ore names from the catalogue.
+				local parts = {}
+				for oreId, count in costs do
+					local ore = OreCatalog.get(oreId)
+					local name = if ore then ore.name else oreId
+					table.insert(parts, `{count}x {name}`)
+				end
+				self._drillCost.Text = table.concat(parts, "  ")
+
+				-- Grey out when can't afford.
+				local canAfford = true
+				for oreId, needed in costs do
+					if (self._counts[oreId] or 0) < needed then
+						canAfford = false
+						break
+					end
+				end
+				self._drillUpgrade.Face.AutoButtonColor = canAfford
+				self._drillCost.TextColor3 = if canAfford then COLORS.Text else COLORS.TextDim
+			end
+		end
+	end
 end
 
 -- One mineral's count, as published by Snapshot.ore.
 function ResearchPanel:SetOre(oreId: string, count: number)
 	self._counts[oreId] = math.max(0, math.floor(count))
+	self:_refresh()
+end
+
+function ResearchPanel:SetDrill(hasDrill: boolean, level: number)
+	self._hasDrill = hasDrill
+	self._drillLevel = level
 	self:_refresh()
 end
 

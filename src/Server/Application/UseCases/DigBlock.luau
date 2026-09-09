@@ -18,7 +18,6 @@ local function fromShared(path: string): any
 	return "../../../Shared/" .. path
 end
 
-local Backpack = require(fromShared("Domain/Research/Backpack"))
 local MineGrid = require(fromShared("Domain/Research/MineGrid"))
 local OreCatalog = require(fromShared("Domain/Research/OreCatalog"))
 local ResearchMine = require(fromShared("Domain/Research/ResearchMine"))
@@ -34,7 +33,6 @@ export type Dependencies = {
 	sessionRegistry: any,
 	sceneBuilder: any, -- Ports.SceneBuilder
 	gridRules: MineGrid.Rules,
-	backpackCapacity: number,
 	digCooldown: number,
 	-- Injected by the container so Domain stays pure: the use case calls
 	-- this to get random numbers for grid generation. Returns [0, 1).
@@ -46,7 +44,6 @@ export type DigResult = {
 	oreName: string?, -- nil if dirt
 	rarity: string?, -- nil if dirt
 	newCount: number?, -- new count of that ore in the bag, nil if dirt
-	bagFull: boolean,
 }
 
 local DigBlock = {}
@@ -111,26 +108,18 @@ function DigBlock:run(
 	self.sessionRegistry:setLastDig(userId, now)
 	self.sceneBuilder:removeMineBlock(userId, layer, x, y)
 
-	local result: DigResult = { bagFull = Backpack.isFull(profile.ores, self.backpackCapacity) }
+	local result: DigResult = {}
 
 	if oreId then
 		local ore = OreCatalog.get(oreId)
-		if ore and not result.bagFull then
+		if ore then
 			local count = (profile.ores[oreId] or 0) + 1
 			profile.ores[oreId] = count
 			result.oreId = oreId
 			result.oreName = ore.name
 			result.rarity = ore.rarity
 			result.newCount = count
-			result.bagFull = Backpack.isFull(profile.ores, self.backpackCapacity)
 			self.statsPublisher:publish(userId, Snapshot.ore(oreId, count))
-		elseif ore and result.bagFull then
-			-- Ore found but bag is full: the block is consumed (dug) but
-			-- the ore is lost. This is intentional: you see it but can't
-			-- pick it up, creating pressure to sell.
-			result.oreId = oreId
-			result.oreName = ore.name
-			result.rarity = ore.rarity
 		end
 	end
 

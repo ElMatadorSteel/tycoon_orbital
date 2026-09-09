@@ -34,6 +34,7 @@ local Railgun = require(fromShared("Domain/Mining/Railgun"))
 local AsteroidTiers = require(fromShared("Domain/Mining/AsteroidTiers"))
 local ResearchMine = require(fromShared("Domain/Research/ResearchMine"))
 local Shovel = require(fromShared("Domain/Research/Shovel"))
+local Drill = require(fromShared("Domain/Research/Drill"))
 local Vein = require(fromShared("Domain/Research/Vein"))
 local MineGrid = require(fromShared("Domain/Research/MineGrid"))
 local SpendCredits = require("../Application/UseCases/SpendCredits")
@@ -63,6 +64,9 @@ local SellOres = require("../Application/UseCases/SellOres")
 local DevGiveOres = require("../Application/UseCases/DevGiveOres")
 local DevSetWalkSpeed = require("../Application/UseCases/DevSetWalkSpeed")
 local DigBlock = require("../Application/UseCases/DigBlock")
+local UnlockDrill = require("../Application/UseCases/UnlockDrill")
+local UpgradeDrill = require("../Application/UseCases/UpgradeDrill")
+local RunDrillTick = require("../Application/UseCases/RunDrillTick")
 
 export type Ports = {
 	profileRepository: any, -- Ports.ProfileRepository
@@ -98,8 +102,8 @@ export type Rules = {
 	shovel: Shovel.Rules,
 	vein: Vein.Rules,
 	mineGrid: MineGrid.Rules,
-	backpackCapacity: number,
 	digCooldown: number,
+	drill: Drill.Rules,
 }
 
 export type Container = {
@@ -133,6 +137,9 @@ export type Container = {
 		mineVein: any,
 		digBlock: any,
 		sellOres: any,
+		unlockDrill: any,
+		upgradeDrill: any,
+		runDrillTick: any,
 		devGiveOres: any?,
 	},
 }
@@ -326,7 +333,6 @@ function Container.new(
 			clock = ports.clock,
 			sceneBuilder = ports.sceneBuilder,
 			gridRules = rules.mineGrid,
-			backpackCapacity = rules.backpackCapacity,
 			digCooldown = rules.digCooldown,
 			random = math.random,
 		}, DigBlock),
@@ -343,6 +349,28 @@ function Container.new(
 			statsPublisher = ports.statsPublisher,
 			notifier = ports.notifier,
 		}, SellOres),
+
+		unlockDrill = setmetatable({
+			profileRepository = ports.profileRepository,
+			statsPublisher = ports.statsPublisher,
+			sceneBuilder = ports.sceneBuilder,
+			drillRules = rules.drill,
+		}, UnlockDrill),
+
+		upgradeDrill = setmetatable({
+			profileRepository = ports.profileRepository,
+			statsPublisher = ports.statsPublisher,
+			drillRules = rules.drill,
+		}, UpgradeDrill),
+
+		runDrillTick = setmetatable({
+			profileRepository = ports.profileRepository,
+			sessionRegistry = sessionRegistry,
+			statsPublisher = ports.statsPublisher,
+			clock = ports.clock,
+			drillRules = rules.drill,
+			random = math.random,
+		}, RunDrillTick),
 	}
 
 	-- Dev-only affordances, never present in production: appended by the

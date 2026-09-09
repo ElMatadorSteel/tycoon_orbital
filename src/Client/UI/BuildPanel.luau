@@ -576,9 +576,8 @@ function BuildPanel.new(parent: ScreenGui): BuildPanel
 	end
 
 	local tabsTop = TITLE_HEIGHT + SPACE.xs + SUBTITLE_HEIGHT + SPACE.md
-	local tabWidth = math.floor(
-		(PANEL.X - SPACE.xl * 2 - SPACE.sm * (#categories - 1)) / #categories
-	)
+	local tabWidth =
+		math.floor((PANEL.X - SPACE.xl * 2 - SPACE.sm * (#categories - 1)) / #categories)
 
 	local tabBar = Theme.new("Frame", {
 		Name = "Tabs",

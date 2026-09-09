@@ -130,6 +130,80 @@ local Balance = {
 	-- Adapters/Roblox/ResearchMineBuilder, same as RIM_HEIGHT does in
 	-- StationSceneBuilder and the layout jitter does in Domain/Plots/Layout.
 	Research = {
+		-- The drill: purchased once at the drill site, then passively mines
+		-- ores at a pace that scales with its level. Upgrade costs are paid
+		-- in ore (Iron/Copper/Titanium), not credits.
+		Drill = {
+			Cost = 1500, -- credits to buy
+			MaxLevel = 10,
+			TickRate = 1, -- seconds between tick checks
+			-- Seconds between each ore production, indexed by level.
+			-- Level 1 is slow, level 10 is fast.
+			Intervals = { 12, 10, 8, 6.5, 5, 4, 3.2, 2.5, 2, 1.5 },
+			-- Weighted drop pool per level. Higher levels unlock rarer ores.
+			DropTable = {
+				{ { id = "Iron", weight = 100 } },
+				{ { id = "Iron", weight = 80 }, { id = "Copper", weight = 20 } },
+				{ { id = "Iron", weight = 60 }, { id = "Copper", weight = 40 } },
+				{
+					{ id = "Iron", weight = 40 },
+					{ id = "Copper", weight = 40 },
+					{ id = "Titanium", weight = 20 },
+				},
+				{
+					{ id = "Iron", weight = 30 },
+					{ id = "Copper", weight = 35 },
+					{ id = "Titanium", weight = 35 },
+				},
+				{
+					{ id = "Iron", weight = 20 },
+					{ id = "Copper", weight = 25 },
+					{ id = "Titanium", weight = 30 },
+					{ id = "Iridium", weight = 25 },
+				},
+				{
+					{ id = "Iron", weight = 15 },
+					{ id = "Copper", weight = 20 },
+					{ id = "Titanium", weight = 25 },
+					{ id = "Iridium", weight = 30 },
+					{ id = "Etherite", weight = 10 },
+				},
+				{
+					{ id = "Iron", weight = 10 },
+					{ id = "Copper", weight = 15 },
+					{ id = "Titanium", weight = 25 },
+					{ id = "Iridium", weight = 30 },
+					{ id = "Etherite", weight = 20 },
+				},
+				{
+					{ id = "Iron", weight = 5 },
+					{ id = "Copper", weight = 10 },
+					{ id = "Titanium", weight = 20 },
+					{ id = "Iridium", weight = 35 },
+					{ id = "Etherite", weight = 30 },
+				},
+				{
+					{ id = "Iron", weight = 5 },
+					{ id = "Copper", weight = 10 },
+					{ id = "Titanium", weight = 15 },
+					{ id = "Iridium", weight = 30 },
+					{ id = "Etherite", weight = 40 },
+				},
+			},
+			-- Ore cost to go FROM level N TO level N+1.
+			-- Only Iron/Copper/Titanium: rarer ores are for the rocket.
+			UpgradeCosts = {
+				{ Iron = 15 },
+				{ Iron = 30, Copper = 10 },
+				{ Iron = 50, Copper = 25 },
+				{ Iron = 40, Copper = 40, Titanium = 10 },
+				{ Iron = 30, Copper = 50, Titanium = 25 },
+				{ Copper = 60, Titanium = 40 },
+				{ Copper = 40, Titanium = 60 },
+				{ Iron = 100, Copper = 80, Titanium = 50 },
+				{ Iron = 150, Copper = 100, Titanium = 80 },
+			},
+		},
 		Mine = {
 			Cost = 2500,
 		},

@@ -29,6 +29,7 @@ local Rebirth = require(fromShared("Domain/Rebirth/Rebirth"))
 local ResearchMine = require(fromShared("Domain/Research/ResearchMine"))
 local OreCatalog = require(fromShared("Domain/Research/OreCatalog"))
 local Shovel = require(fromShared("Domain/Research/Shovel"))
+local Drill = require(fromShared("Domain/Research/Drill"))
 local Container = require("./Container")
 local RemoteBindings = require("./RemoteBindings")
 local SessionRegistry = require("../Application/SessionRegistry")
@@ -121,6 +122,7 @@ function Bootstrap.start()
 		stationsParent = workspace:WaitForChild("Stations"),
 		researchMineCost = Balance.Research.Mine.Cost,
 		shovelCost = Balance.Research.Shovel.Cost,
+		drillCost = Balance.Research.Drill.Cost,
 	})
 
 	-- Lobby scene contract -- unchanged from the legacy LobbyService: the
@@ -227,8 +229,14 @@ function Bootstrap.start()
 				regenInterval = Balance.Research.RegenInterval,
 				layers = Balance.Research.Layers,
 			},
-			backpackCapacity = Balance.Research.Backpack.Capacity,
 			digCooldown = Balance.Research.DigCooldown,
+			drill = {
+				cost = Balance.Research.Drill.Cost,
+				maxLevel = Balance.Research.Drill.MaxLevel,
+				intervals = Balance.Research.Drill.Intervals,
+				dropTable = Balance.Research.Drill.DropTable,
+				upgradeCosts = Balance.Research.Drill.UpgradeCosts,
+			},
 		},
 		development = RunService:IsStudio(),
 	})
@@ -256,6 +264,10 @@ function Bootstrap.start()
 	-- Instance.
 	sceneBuilder.shovelPadTouched:Connect(function(userId: number)
 		container.useCases.unlockShovel:run(userId)
+	end)
+
+	sceneBuilder.drillPadTouched:Connect(function(userId: number)
+		container.useCases.unlockDrill:run(userId)
 	end)
 
 	-- We load the character ourselves, once the spawn point is known --
@@ -303,6 +315,10 @@ function Bootstrap.start()
 		container.ports.statsPublisher:publish(
 			player.UserId,
 			Snapshot.shovel(Shovel.isUnlocked(profile.unlocked))
+		)
+		container.ports.statsPublisher:publish(
+			player.UserId,
+			Snapshot.drill(Drill.isUnlocked(profile.unlocked), profile.drillLevel or 0)
 		)
 
 		container.useCases.returnToLobby:run(player.UserId)
@@ -359,6 +375,22 @@ function Bootstrap.start()
 				end)
 				if not ok then
 					warn(`[Bootstrap] mining tick failed for {player.Name}: {err}`)
+				end
+			end
+		end
+	end)
+
+	-- The drill's own tick loop -- separate from both the production loop and
+	-- the mining loop. RunDrillTick itself no-ops for anyone without a Drill.
+	task.spawn(function()
+		while true do
+			task.wait(Balance.Research.Drill.TickRate)
+			for _, player in Players:GetPlayers() do
+				local ok, err = pcall(function()
+					container.useCases.runDrillTick:run(player.UserId)
+				end)
+				if not ok then
+					warn(`[Bootstrap] drill tick failed for {player.Name}: {err}`)
 				end
 			end
 		end

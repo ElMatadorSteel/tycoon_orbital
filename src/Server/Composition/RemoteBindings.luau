@@ -92,6 +92,10 @@ function RemoteBindings.bind(container: any)
 	-- oreId is optional -- nil sells the whole bag. Passed straight through
 	-- rather than defaulted here: SellOres type-checks it itself, which is
 	-- where that check belongs when the caller may not be our client.
+	Net.UpgradeDrill.OnServerInvoke = function(player: Player)
+		return respond(container.useCases.upgradeDrill:run(player.UserId))
+	end
+
 	Net.SellOres.OnServerInvoke = function(player: Player, oreId: string?)
 		return respond(container.useCases.sellOres:run(player.UserId, oreId))
 	end

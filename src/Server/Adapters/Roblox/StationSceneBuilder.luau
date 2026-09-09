@@ -443,6 +443,7 @@ export type Config = {
 	researchMineCost: number,
 	-- Likewise, for the shovel pad down in the pit.
 	shovelCost: number,
+	drillCost: number,
 }
 
 function StationSceneBuilder.new(config: Config)
@@ -455,6 +456,7 @@ function StationSceneBuilder.new(config: Config)
 		researchPadTouched = Signal.new(),
 		-- Same contract as the pad above, for the shovel sold down in the pit.
 		shovelPadTouched = Signal.new(),
+		drillPadTouched = Signal.new(),
 		_shovelTool = ResearchMineBuilder.buildShovelTool(),
 		_slots = Layout.slots(config.layoutRules),
 		_owner = {} :: { [number]: number }, -- slotIndex -> userId
@@ -465,6 +467,7 @@ function StationSceneBuilder.new(config: Config)
 		_pad = {} :: { [number]: any }, -- userId -> ResearchMineBuilder.PadHandle
 		_mine = {} :: { [number]: Model }, -- userId -> research mine, once opened
 		_shovelPad = {} :: { [number]: any }, -- userId -> the pit's shovel pad
+		_drillPad = {} :: { [number]: any }, -- userId -> the drill site's pad
 		_models = {} :: { [number]: { [string]: Model } }, -- userId -> gridKey -> module Model
 	}, StationSceneBuilder)
 end
@@ -616,6 +619,7 @@ function StationSceneBuilder:releasePlot(userId: number)
 	self._pad[userId] = nil
 	self._mine[userId] = nil
 	self._shovelPad[userId] = nil
+	self._drillPad[userId] = nil
 end
 
 ----------------------------------------------------------------------
@@ -662,6 +666,22 @@ function StationSceneBuilder:buildResearchMine(userId: number): boolean
 	self._shovelPad[userId] = shovelPad
 	self:_bindPad(shovelPad, userId, self.shovelPadTouched)
 
+	-- The drill's pad is built by ResearchMineBuilder.buildZone as a Part
+	-- named "DrillSite". Find it and wrap it in a handle so _bindPad and
+	-- markUnlocked/refuse work on it the same way as every other pad.
+	local drillSite = zone:FindFirstChild("DrillSite", true)
+	if drillSite and drillSite:IsA("BasePart") then
+		local signAnchor = drillSite:FindFirstChild("SignAnchor")
+		local sign = signAnchor and signAnchor:FindFirstChild("Sign")
+		local handle = {
+			pad = drillSite,
+			sign = sign,
+			openText = "Active",
+		}
+		self._drillPad[userId] = handle
+		self:_bindPad(handle, userId, self.drillPadTouched)
+	end
+
 	return true
 end
 
@@ -701,6 +721,20 @@ function StationSceneBuilder:refuseShovel(userId: number)
 	local pad = self._shovelPad[userId]
 	if pad then
 		ResearchMineBuilder.refuse(pad)
+	end
+end
+
+function StationSceneBuilder:markDrillUnlocked(userId: number)
+	local handle = self._drillPad[userId]
+	if handle then
+		ResearchMineBuilder.markUnlocked(handle)
+	end
+end
+
+function StationSceneBuilder:refuseDrill(userId: number)
+	local handle = self._drillPad[userId]
+	if handle then
+		ResearchMineBuilder.refuse(handle)
 	end
 end
 

@@ -53,6 +53,8 @@ export type Profile = {
 	ores: { [string]: number },
 	-- The digging grid state, nil until the mine is first generated.
 	mine: SavedMine?,
+	-- The drill's current level, 0 = not yet purchased.
+	drillLevel: number,
 	rebirths: number,
 	playtime: number,
 	savedAt: number,
@@ -68,6 +70,7 @@ function Profile.blank(rules: Rules): Profile
 		objective = 1,
 		unlocked = {},
 		ores = {},
+		drillLevel = 0,
 		rebirths = 0,
 		playtime = 0,
 		savedAt = 0,
@@ -94,6 +97,7 @@ function Profile.sanitize(raw: any, rules: Rules): Profile
 	-- A save predating objectives has no such field: it restarts from the
 	-- first one. That is exactly the intended behaviour, no migration.
 	profile.objective = math.max(1, math.floor(number(raw.objective, 1)))
+	profile.drillLevel = math.clamp(math.floor(number(raw.drillLevel, 0)), 0, 10)
 	profile.rebirths = math.max(0, math.floor(number(raw.rebirths, 0)))
 	profile.playtime = math.max(0, number(raw.playtime, 0))
 	profile.savedAt = math.max(0, number(raw.savedAt, 0))
