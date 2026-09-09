@@ -899,55 +899,6 @@ local function buildBlockGrid(
 	return folder
 end
 
-local function buildResearchPost(model: Model, origin: CFrame, centreZ: number)
-	local terrace = TERRACES[1]
-	local radius = (terrace.outer + terrace.inner) / 2
-	local angle = math.rad(90)
-	-- Same convention as a vein: local -Z looks into the pit, so the hut's
-	-- open side faces the work.
-	local base = origin
-		* CFrame.new(math.sin(angle) * radius, terrace.top, centreZ + math.cos(angle) * radius)
-		* CFrame.Angles(0, angle, 0)
-
-	part(model, "PostFloor", {
-		Size = Vector3.new(18, 1, 16),
-		CFrame = base * CFrame.new(0, 0.5 - SEAT, 0),
-		Color = PALETTE.Structure,
-		Material = Enum.Material.DiamondPlate,
-	})
-	part(model, "PostWall", {
-		Size = Vector3.new(18, 9, 1),
-		CFrame = base * CFrame.new(0, 5.4, 7.5),
-		Color = PALETTE.Structure,
-		Material = Enum.Material.Metal,
-	})
-	for _, side in { -1, 1 } do
-		-- A shade lower than the back wall they meet at the corners.
-		part(model, "PostWall", {
-			Size = Vector3.new(1, 9, 16),
-			CFrame = base * CFrame.new(side * 8.5, 5.37, 0),
-			Color = PALETTE.Structure,
-			Material = Enum.Material.Metal,
-		})
-	end
-	local roof = part(model, "PostRoof", {
-		Size = Vector3.new(20, 1, 18),
-		CFrame = base * CFrame.new(0, 10.3, 0),
-		Color = PALETTE.Structure,
-		Material = Enum.Material.Metal,
-	})
-	part(model, "PostGlow", {
-		Size = Vector3.new(18, 0.4, 0.4),
-		CFrame = base * CFrame.new(0, 9.9, -8.6),
-		Color = PALETTE.Trim,
-		Material = Enum.Material.Neon,
-		CanCollide = false,
-		CanQuery = false,
-	})
-	pointLight(roof, PALETTE.Trim, 32, 1.6)
-	label(roof, "POSTE DE RECHERCHE", "Analyse des minerais")
-end
-
 -- The authored drill, kept in ReplicatedStorage rather than built from code
 -- like everything else here. That is a real trade: an authored model lives
 -- only in the place file, so this one piece of the mine cannot be rebuilt
@@ -1144,7 +1095,6 @@ function ResearchMineBuilder.buildZone(parent: Instance, origin: CFrame, span: n
 		)
 	end
 
-	buildResearchPost(model, origin, centreZ)
 	buildDrillSite(model, origin, centreZ)
 	buildSurfacePad(model, origin, centreZ)
 
