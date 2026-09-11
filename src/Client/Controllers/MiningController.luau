@@ -7,6 +7,7 @@
 -- server is sole judge of whether that claim pays out.
 
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local function fromShared(path: string): any
@@ -100,9 +101,39 @@ function MiningController:_toastMessage(message: string, isError: boolean?)
 end
 
 ----------------------------------------------------------------------
--- Crosshair -- visible only while the Railgun is the equipped tool.
+-- First-person detection: the crosshair only shows when the camera is
+-- right on the character's head.  Threshold picked by eye -- anything
+-- under ~2 studs reads as first person.  Higher than the head-bob
+-- amplitude so the crosshair doesn't flicker while walking.
+local FP_THRESHOLD = 2
 
-function MiningController:_buildCrosshair(gui: ScreenGui)
+function MiningController:_isFirstPerson(): boolean
+	local character = Players.LocalPlayer.Character
+	if not character then
+		return false
+	end
+	local head = character:FindFirstChild("Head")
+	if not head or not head:IsA("BasePart") then
+		return false
+	end
+	return (getCamera().CFrame.Position - head.Position).Magnitude < FP_THRESHOLD
+end
+
+----------------------------------------------------------------------
+-- Crosshair -- visible only in first person while the Railgun is equipped.
+-- Uses its own ScreenGui with ScreenInsets = None so it sits at the true
+-- viewport centre, not the CoreUI-safe centre (which is shifted down by
+-- the topbar height).
+
+function MiningController:_buildCrosshair(playerGui: Instance)
+	local crosshairGui = Instance.new("ScreenGui")
+	crosshairGui.Name = "CrosshairUI"
+	crosshairGui.ResetOnSpawn = false
+	crosshairGui.ScreenInsets = Enum.ScreenInsets.None
+	crosshairGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	crosshairGui.DisplayOrder = 9
+	crosshairGui.Parent = playerGui
+
 	self._crosshair = Theme.new("Frame", {
 		Name = "Crosshair",
 		AnchorPoint = Vector2.new(0.5, 0.5),
@@ -110,7 +141,7 @@ function MiningController:_buildCrosshair(gui: ScreenGui)
 		Size = UDim2.fromOffset(24, 24),
 		BackgroundTransparency = 1,
 		Visible = false,
-		Parent = gui,
+		Parent = crosshairGui,
 	}, {
 		Theme.new("Frame", {
 			Name = "H",
@@ -132,7 +163,8 @@ function MiningController:_buildCrosshair(gui: ScreenGui)
 end
 
 function MiningController:_setEquipped(equipped: boolean)
-	self._crosshair.Visible = equipped
+	self._equipped = equipped
+	self._crosshair.Visible = equipped and self:_isFirstPerson()
 end
 
 ----------------------------------------------------------------------
@@ -140,14 +172,25 @@ end
 
 -- Returns the asteroid id AND the world-space hit position, so the beam
 -- can be drawn even after the server despawns the model.
+-- First person: raycast from viewport centre (locked cursor).
+-- Third person: raycast from the mouse position (free cursor).
 function MiningController:_aimResult(): (string?, Vector3?)
 	local player = Players.LocalPlayer
 	local asteroidsRoot = workspace:FindFirstChild("Asteroids")
 	local folder = asteroidsRoot and asteroidsRoot:FindFirstChild(`Asteroids_{player.UserId}`)
 
 	local camera = getCamera()
-	local viewport = camera.ViewportSize
-	local ray = camera:ViewportPointToRay(viewport.X / 2, viewport.Y / 2)
+	local ray
+	if self:_isFirstPerson() then
+		local viewport = camera.ViewportSize
+		ray = camera:ViewportPointToRay(viewport.X / 2, viewport.Y / 2)
+	else
+		-- Mouse.X/Y are in screen space (absolute), so ScreenPointToRay
+		-- is the correct match — ViewportPointToRay would double-offset
+		-- by the topbar height.
+		local mouse = player:GetMouse()
+		ray = camera:ScreenPointToRay(mouse.X, mouse.Y)
+	end
 
 	-- When there is an asteroid folder, try to hit one first.
 	if folder then
@@ -314,9 +357,10 @@ function MiningController:Start()
 	gui.ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets
 	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	gui.DisplayOrder = 8
-	gui.Parent = player:WaitForChild("PlayerGui")
+	local playerGui = player:WaitForChild("PlayerGui")
+	gui.Parent = playerGui
 
-	self:_buildCrosshair(gui)
+	self:_buildCrosshair(playerGui)
 	self:_buildToast(gui)
 
 	-- The hotbar. It reads the Backpack itself, so it needs telling only the
@@ -339,6 +383,13 @@ function MiningController:Start()
 		onCharacter(player.Character)
 	end
 	player.CharacterAdded:Connect(onCharacter)
+
+	-- Update crosshair visibility as the player zooms in/out.
+	RunService.Heartbeat:Connect(function()
+		if self._equipped then
+			self._crosshair.Visible = self:_isFirstPerson()
+		end
+	end)
 end
 
 return MiningController
