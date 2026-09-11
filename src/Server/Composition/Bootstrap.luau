@@ -162,11 +162,12 @@ function Bootstrap.start()
 		lifetime = Balance.Mining.Railgun.AsteroidLifetime,
 	})
 
-	RailgunKioskBuilder.new({
+	local railgunKiosk = RailgunKioskBuilder.new({
 		lobby = lobby,
 		lobbySpawn = lobbySpawn,
 		profileRepository = profileRepository,
-	}):build()
+	})
+	railgunKiosk:build()
 
 	-- Watches PlayerAdded itself, so it must exist before anyone can join:
 	-- built here rather than lazily on the first dev command.
@@ -320,6 +321,10 @@ function Bootstrap.start()
 			player.UserId,
 			Snapshot.drill(Drill.isUnlocked(profile.unlocked), profile.drillLevel or 0)
 		)
+
+		if profile.unlocked.Railgun then
+			railgunKiosk:grantTool(player)
+		end
 
 		container.useCases.returnToLobby:run(player.UserId)
 	end

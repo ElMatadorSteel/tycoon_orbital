@@ -31,6 +31,11 @@ local SPACE = Theme.Space
 
 local MAX_HIT_DISTANCE = 1000
 
+-- Laser beam: a thin neon cylinder from the tool to the target, fading out.
+local BEAM_COLOR = Color3.fromRGB(255, 205, 60)
+local BEAM_THICKNESS = 0.15
+local BEAM_FADE_TIME = 0.25
+
 local MiningController = {}
 
 MiningController._equippedTool = nil :: Tool?
@@ -133,41 +138,108 @@ end
 ----------------------------------------------------------------------
 -- Firing
 
-function MiningController:_hoveredAsteroidId(): string?
+-- Returns the asteroid id AND the world-space hit position, so the beam
+-- can be drawn even after the server despawns the model.
+function MiningController:_aimResult(): (string?, Vector3?)
 	local player = Players.LocalPlayer
 	local asteroidsRoot = workspace:FindFirstChild("Asteroids")
 	local folder = asteroidsRoot and asteroidsRoot:FindFirstChild(`Asteroids_{player.UserId}`)
-	if not folder then
-		return nil
-	end
 
 	local camera = getCamera()
 	local viewport = camera.ViewportSize
 	local ray = camera:ViewportPointToRay(viewport.X / 2, viewport.Y / 2)
 
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Include
-	params.FilterDescendantsInstances = { folder }
+	-- When there is an asteroid folder, try to hit one first.
+	if folder then
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Include
+		params.FilterDescendantsInstances = { folder }
 
-	local result = workspace:Raycast(ray.Origin, ray.Direction * MAX_HIT_DISTANCE, params)
-	if not result then
-		return nil
+		local result = workspace:Raycast(ray.Origin, ray.Direction * MAX_HIT_DISTANCE, params)
+		if result then
+			local model = result.Instance:FindFirstAncestorWhichIsA("Model")
+			if model and model.Parent == folder then
+				local asteroidId = model:GetAttribute("AsteroidId")
+				if typeof(asteroidId) == "string" then
+					return asteroidId, result.Position
+				end
+			end
+		end
 	end
 
-	local model = result.Instance:FindFirstAncestorWhichIsA("Model")
-	if not model or model.Parent ~= folder then
+	-- Nothing hit: return a far-away point along the aim direction so the
+	-- beam still fires into the void (visual feedback that the weapon works).
+	local farPoint = ray.Origin + ray.Direction * MAX_HIT_DISTANCE
+	return nil, farPoint
+end
+
+function MiningController:_beamOrigin(): Vector3?
+	local player = Players.LocalPlayer
+	local character = player.Character
+	if not character then
 		return nil
 	end
+	-- Fire from the tool handle if equipped, otherwise from the character root.
+	local tool = self._equippedTool
+	if tool then
+		local handle = tool:FindFirstChild("Handle")
+		if handle and handle:IsA("BasePart") then
+			return handle.Position
+		end
+	end
+	local root = character:FindFirstChild("HumanoidRootPart")
+	return root and root.Position or nil
+end
 
-	local asteroidId = model:GetAttribute("AsteroidId")
-	return if typeof(asteroidId) == "string" then asteroidId else nil
+function MiningController:_fireBeam(target: Vector3)
+	local origin = self:_beamOrigin()
+	if not origin then
+		return
+	end
+
+	local direction = target - origin
+	local distance = direction.Magnitude
+	if distance < 1 then
+		return
+	end
+
+	local beam = Instance.new("Part")
+	beam.Name = "RailgunBeam"
+	beam.Anchored = true
+	beam.CanCollide = false
+	beam.CanTouch = false
+	beam.CanQuery = false
+	beam.CastShadow = false
+	beam.Material = Enum.Material.Neon
+	beam.Color = BEAM_COLOR
+	beam.Size = Vector3.new(BEAM_THICKNESS, BEAM_THICKNESS, distance)
+	beam.CFrame = CFrame.lookAt(origin, target) * CFrame.new(0, 0, -distance / 2)
+	beam.Parent = workspace
+
+	TweenService:Create(beam, TweenInfo.new(BEAM_FADE_TIME, Enum.EasingStyle.Quad), {
+		Transparency = 1,
+		Size = Vector3.new(BEAM_THICKNESS * 3, BEAM_THICKNESS * 3, distance),
+	}):Play()
+
+	task.delay(BEAM_FADE_TIME + 0.05, function()
+		beam:Destroy()
+	end)
 end
 
 function MiningController:_fire()
-	local asteroidId = self:_hoveredAsteroidId()
+	local asteroidId, hitPos = self:_aimResult()
 	if not asteroidId then
-		return -- nothing under the crosshair -- no network call, no cooldown spent
+		-- Nothing under the crosshair: fire the beam into the void anyway
+		-- so the player sees the weapon is working.
+		if hitPos then
+			self:_fireBeam(hitPos)
+		end
+		return
 	end
+
+	-- Capture the hit position BEFORE calling the server, because the
+	-- server despawns the asteroid model on success.
+	self:_fireBeam(hitPos :: Vector3)
 
 	local ok, result = Net.FireRailgun:InvokeServer(asteroidId)
 	if ok then

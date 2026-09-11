@@ -53,12 +53,25 @@ local function buildDisplayProp(parent: Instance, cframe: CFrame)
 	})
 end
 
--- The Tool a player actually receives: one Part named "Handle" (Roblox's own
--- convention for what gets welded into a character's hand on equip).
--- Deliberately no embedded LocalScript -- MiningController (Client) owns all
+-- The Tool a player actually receives. An authored model when one lives at
+-- ReplicatedStorage.RailgunModel.Railgun (place-file only, same caveat as
+-- the drill and pickaxe templates). The procedural fallback below keeps the
+-- feature working even if the model is missing.
+-- Deliberately no embedded scripts -- MiningController (Client) owns all
 -- behaviour, matching this codebase's rule that logic lives in Controllers,
 -- never in ad-hoc per-instance scripts.
 local function buildToolTemplate(): Tool
+	if game then
+		local folder = (game :: any):GetService("ReplicatedStorage"):FindFirstChild("RailgunModel")
+		local template = folder and folder:FindFirstChild("Railgun")
+		if template and template:IsA("Tool") and template:FindFirstChild("Handle") then
+			local clone = template:Clone()
+			clone.CanBeDropped = false
+			return clone
+		end
+	end
+
+	-- Procedural fallback
 	local tool = Instance.new("Tool")
 	tool.Name = "Railgun"
 	tool.RequiresHandle = true
@@ -153,6 +166,20 @@ function RailgunKioskBuilder:build()
 		local clone = self._toolTemplate:Clone()
 		clone.Parent = player.Backpack
 	end)
+end
+
+-- Give the tool to a player who already owns it (e.g. on join / respawn).
+-- Idempotent: does nothing when the player already holds one.
+function RailgunKioskBuilder:grantTool(player: Player)
+	if hasRailgunTool(player) then
+		return
+	end
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	if not backpack then
+		return
+	end
+	local clone = self._toolTemplate:Clone()
+	clone.Parent = backpack
 end
 
 return RailgunKioskBuilder
