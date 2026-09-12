@@ -68,6 +68,7 @@ local UnlockDrill = require("../Application/UseCases/UnlockDrill")
 local UpgradeDrill = require("../Application/UseCases/UpgradeDrill")
 local RunDrillTick = require("../Application/UseCases/RunDrillTick")
 local PurchaseHouseStage = require("../Application/UseCases/PurchaseHouseStage")
+local DevResetHouse = require("../Application/UseCases/DevResetHouse")
 
 export type Ports = {
 	profileRepository: any, -- Ports.ProfileRepository
@@ -145,6 +146,7 @@ export type Container = {
 		runDrillTick: any,
 		purchaseHouseStage: any,
 		devGiveOres: any?,
+		devResetHouse: any?,
 	},
 }
 
@@ -421,6 +423,12 @@ function Container.new(
 			movementActuator = ports.movementActuator,
 			walkSpeedRules = rules.walkSpeed,
 		}, DevSetWalkSpeed)
+		castUseCases.devResetHouse = setmetatable({
+			profileRepository = ports.profileRepository,
+			statsPublisher = ports.statsPublisher,
+			sceneBuilder = ports.sceneBuilder,
+			houseStages = rules.houseStages,
+		}, DevResetHouse)
 	end
 
 	return setmetatable({

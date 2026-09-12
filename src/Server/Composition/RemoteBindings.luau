@@ -143,6 +143,11 @@ function RemoteBindings.bind(container: any)
 			return respond(container.useCases.devSetWalkSpeed:run(player.UserId, speed))
 		end
 	end
+	if container.useCases.devResetHouse then
+		Net.DevResetHouse.OnServerInvoke = function(player: Player)
+			return respond(container.useCases.devResetHouse:run(player.UserId))
+		end
+	end
 	-- addCredits is an ordinary, always-wired use case (not dev-only on its
 	-- own) -- only the REMOTE that lets a client trigger it arbitrarily is
 	-- gated to development mode.

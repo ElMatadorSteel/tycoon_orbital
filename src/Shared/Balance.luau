@@ -319,11 +319,16 @@ local Balance = {
 	-- of parts from the authored model in ReplicatedStorage.HouseModels.
 	House = {
 		Stages = {
-			{ id = "Pelouse", name = "Pelouse", cost = 1000 },
+			{ id = "Jardin", name = "Jardin", cost = 1000 },
 			{ id = "Fondations", name = "Fondations", cost = 2500 },
-			{ id = "MursRDC", name = "Murs (RDC)", cost = 5000 },
-			{ id = "MursEtage", name = "Murs (Étage)", cost = 8000 },
-			{ id = "Toit", name = "Toiture", cost = 12000 },
+			{ id = "MursExterieurs", name = "Murs extérieurs", cost = 5000 },
+			{ id = "Garage", name = "Garage", cost = 8000 },
+			{ id = "Cuisine", name = "Cuisine", cost = 12000 },
+			{ id = "Salon", name = "Salon", cost = 16000 },
+			{ id = "SalleAManger", name = "Salle à manger", cost = 20000 },
+			{ id = "Entree", name = "Entrée & Escalier", cost = 25000 },
+			{ id = "Etage", name = "Étage", cost = 35000 },
+			{ id = "Toit", name = "Toiture", cost = 50000 },
 		},
 	},
 

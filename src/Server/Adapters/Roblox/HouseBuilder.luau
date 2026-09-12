@@ -35,11 +35,16 @@ local PALETTE = {
 
 -- Mapping from Balance stage ids to the folder names inside the model.
 local STAGE_FOLDERS = {
-	Pelouse = "Stage1_Pelouse",
-	Fondations = "Stage2_Fondations",
-	MursRDC = "Stage3_MursRDC",
-	MursEtage = "Stage4_MursEtage",
-	Toit = "Stage5_Toit",
+	Jardin = "Stage01_Jardin",
+	Fondations = "Stage02_Fondations",
+	MursExterieurs = "Stage03_MursExterieurs",
+	Garage = "Stage04_Garage",
+	Cuisine = "Stage05_Cuisine",
+	Salon = "Stage06_Salon",
+	SalleAManger = "Stage07_SalleAManger",
+	Entree = "Stage08_Entree",
+	Etage = "Stage09_Etage",
+	Toit = "Stage10_Toit",
 }
 
 -- Pad placement offsets on the plateau, relative to the plateau centre.
@@ -436,6 +441,22 @@ function HouseBuilder:refuse(userId: number, stageId: string)
 			end)
 			break
 		end
+	end
+end
+
+-- Remove all house instances and pads for a user so a fresh build can run.
+function HouseBuilder:reset(userId: number)
+	local house = self._house[userId]
+	if house then
+		house:Destroy()
+		self._house[userId] = nil
+	end
+	local pads = self._pads[userId]
+	if pads then
+		for _, handle in pads do
+			handle.pad:Destroy()
+		end
+		self._pads[userId] = nil
 	end
 end
 

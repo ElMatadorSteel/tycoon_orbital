@@ -869,4 +869,23 @@ function StationSceneBuilder:setModuleLevel(userId: number, x: number, y: number
 	model:SetAttribute("Level", level)
 end
 
+-- Dev-only: tear down and rebuild the house with no stages unlocked.
+function StationSceneBuilder:rebuildHouse(userId: number)
+	local houseBuilder = self._config.houseBuilder
+	if not houseBuilder then
+		return
+	end
+	local origin = self._origin[userId]
+	local zone = self._mine[userId]
+	if not origin or not zone then
+		return
+	end
+	houseBuilder:reset(userId)
+	local span = spanOf(self._config.gridRules)
+	local plateauCFrame, plateauWidth, plateauDepth = ResearchMineBuilder.plateauInfo(origin, span)
+	local repo = self._config.profileRepository
+	local unlocked = if repo then repo:load(userId).unlocked else {}
+	houseBuilder:build(zone, plateauCFrame, plateauWidth, plateauDepth, userId, unlocked)
+end
+
 return StationSceneBuilder

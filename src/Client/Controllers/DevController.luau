@@ -69,6 +69,9 @@ function DevController:Start()
 	panel.onResetAll = function()
 		Net.DevResetAll:InvokeServer()
 	end
+	panel.onResetHouse = function()
+		Net.DevResetHouse:InvokeServer()
+	end
 	-- The only dev remote whose RESULT is read back: the server clamps the
 	-- requested speed, so what it returns is what actually applies, and the
 	-- panel shows that rather than what was typed.

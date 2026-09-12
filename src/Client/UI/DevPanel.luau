@@ -131,6 +131,7 @@ function DevPanel.new(parent: ScreenGui): DevPanel
 	-- in this view.
 	self.onSetWalkSpeed = nil :: ((speed: number?) -> ())?
 	self.onSetDigSpeed = nil :: ((seconds: number?) -> ())?
+	self.onResetHouse = nil :: (() -> ())?
 
 	self._open = false
 
@@ -214,6 +215,10 @@ function DevPanel.new(parent: ScreenGui): DevPanel
 	self._unlimitedToggle =
 		toggleButton("UnlimitedToggle", "Argent illimité : non", "Argent illimité : oui", false)
 
+	local houseLabel = sectionLabel("MAISON")
+	local resetHouseButton =
+		actionButton("ResetHouse", "Réinitialiser la maison", COLORS.MenuInner)
+
 	local resetLabel = sectionLabel("RÉINITIALISATION COMPLÈTE")
 	local resetAllButton = actionButton("ResetAll", "TOUT RÉINITIALISER", COLORS.Invalid)
 
@@ -255,6 +260,8 @@ function DevPanel.new(parent: ScreenGui): DevPanel
 		self._creditsBox,
 		giveCredits.Root,
 		self._unlimitedToggle.Root,
+		houseLabel,
+		resetHouseButton.Root,
 		resetLabel,
 		resetAllButton.Root,
 	})
@@ -375,6 +382,12 @@ function DevPanel.new(parent: ScreenGui): DevPanel
 			self.onSetUnlimitedMoney(next)
 		end
 	end
+
+	resetHouseButton.Face.Activated:Connect(function()
+		if self.onResetHouse then
+			self.onResetHouse()
+		end
+	end)
 
 	-- Two-step confirm: first click arms it (turns white-on-red text, waits
 	-- 4s), second click while armed actually fires the reset.

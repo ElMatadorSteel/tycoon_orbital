@@ -42,6 +42,7 @@ local DEFINITIONS = {
 	DevResetAll = "RemoteFunction",
 	DevGiveOres = "RemoteFunction",
 	DevSetWalkSpeed = "RemoteFunction",
+	DevResetHouse = "RemoteFunction",
 
 	-- server -> client, one-off notifications -- the transport behind
 	-- Ports.Notifier (a "+150" gain popup, a completed-objective banner).
