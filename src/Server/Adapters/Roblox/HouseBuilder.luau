@@ -146,8 +146,9 @@ local function showDescendants(folder: Instance)
 	for _, desc in folder:GetDescendants() do
 		if desc:IsA("BasePart") then
 			desc.Transparency = 0
-			desc.CanCollide = true
 			desc.CanQuery = true
+			-- Door-tagged parts stay walk-through so players can enter
+			desc.CanCollide = not desc:GetAttribute("Door")
 		elseif desc:IsA("Decal") or desc:IsA("Texture") then
 			desc.Transparency = 0
 		elseif
@@ -318,7 +319,7 @@ function HouseBuilder:build(
 				if pad:GetAttribute("Owned") then
 					return
 				end
-				self.stagePadTouched:fire(userId, stage.id)
+				self.stagePadTouched:Fire(userId, stage.id)
 			end)
 		end
 
