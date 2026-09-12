@@ -11,6 +11,8 @@
 -- pad in this codebase (see StationSceneBuilder's researchPadTouched).
 
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 
 local function fromShared(path: string): any
 	if game then
@@ -122,6 +124,85 @@ local function label(pad: BasePart, title: string, subtitle: string)
 end
 
 ----------------------------------------------------------------------
+-- Automatic doors: open when a player approaches, close after they leave.
+
+local DOOR_OPEN_ANGLE = math.rad(-90)
+local DOOR_CLOSE_DELAY = 3
+local DOOR_TWEEN = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local DOOR_DETECT_RANGE = 8
+
+local function setupAutoDoor(doorPart: BasePart)
+	-- Determine door width axis: the axis that is NOT thin and NOT height.
+	local s = doorPart.Size
+	local widthAxis: string
+	local halfWidth: number
+	if s.X < s.Z then
+		-- thin in X → width along Z
+		widthAxis = "Z"
+		halfWidth = s.Z / 2
+	else
+		-- thin in Z → width along X
+		widthAxis = "X"
+		halfWidth = s.X / 2
+	end
+
+	-- Hinge offset: one edge of the door, in the door's local space.
+	local hingeOffset: CFrame
+	if widthAxis == "X" then
+		hingeOffset = CFrame.new(-halfWidth, 0, 0)
+	else
+		hingeOffset = CFrame.new(0, 0, -halfWidth)
+	end
+
+	local closedCF = doorPart.CFrame
+	local doorCenter = closedCF.Position
+	local openCF = closedCF
+		* hingeOffset
+		* CFrame.Angles(0, DOOR_OPEN_ANGLE, 0)
+		* hingeOffset:Inverse()
+
+	local isOpen = false
+
+	-- Proximity check: every heartbeat, see if any player character is near.
+	local rangeSq = DOOR_DETECT_RANGE * DOOR_DETECT_RANGE
+
+	RunService.Heartbeat:Connect(function()
+		if not doorPart.Parent then
+			return
+		end
+
+		local nearby = false
+		for _, player in Players:GetPlayers() do
+			local character = player.Character
+			local hrp = character and character:FindFirstChild("HumanoidRootPart")
+			if hrp then
+				local delta = hrp.Position - doorCenter
+				local dy = math.abs(delta.Y)
+				if dy <= s.Y and delta.X * delta.X + delta.Z * delta.Z <= rangeSq then
+					nearby = true
+					break
+				end
+			end
+		end
+
+		if nearby and not isOpen then
+			isOpen = true
+			doorPart.CanCollide = false
+			doorPart.CanQuery = false
+			TweenService:Create(doorPart, DOOR_TWEEN, { CFrame = openCF }):Play()
+		elseif not nearby and isOpen then
+			isOpen = false
+			local tween = TweenService:Create(doorPart, DOOR_TWEEN, { CFrame = closedCF })
+			tween.Completed:Once(function()
+				doorPart.CanCollide = true
+				doorPart.CanQuery = true
+			end)
+			tween:Play()
+		end
+	end)
+end
+
+----------------------------------------------------------------------
 -- Hide / show helpers: every visible instance type in the authored model
 -- must be covered, not just BaseParts -- fires, lights, decals and scripts
 -- would otherwise stay active while their parent wall is invisible.
@@ -151,9 +232,12 @@ local function showDescendants(folder: Instance)
 	for _, desc in folder:GetDescendants() do
 		if desc:IsA("BasePart") then
 			desc.Transparency = 0
+			desc.CanCollide = true
 			desc.CanQuery = true
-			-- Door-tagged parts stay walk-through so players can enter
-			desc.CanCollide = not desc:GetAttribute("Door")
+			-- Set up automatic doors for tagged parts
+			if desc:GetAttribute("Door") then
+				setupAutoDoor(desc)
+			end
 		elseif desc:IsA("Decal") or desc:IsA("Texture") then
 			desc.Transparency = 0
 		elseif
