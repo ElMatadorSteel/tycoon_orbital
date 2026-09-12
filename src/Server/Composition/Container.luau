@@ -67,6 +67,7 @@ local DigBlock = require("../Application/UseCases/DigBlock")
 local UnlockDrill = require("../Application/UseCases/UnlockDrill")
 local UpgradeDrill = require("../Application/UseCases/UpgradeDrill")
 local RunDrillTick = require("../Application/UseCases/RunDrillTick")
+local PurchaseHouseStage = require("../Application/UseCases/PurchaseHouseStage")
 
 export type Ports = {
 	profileRepository: any, -- Ports.ProfileRepository
@@ -78,6 +79,7 @@ export type Ports = {
 	teleporter: any, -- Ports.Teleporter
 	asteroidField: any, -- Ports.AsteroidField
 	movementActuator: any, -- Ports.MovementActuator
+	houseBuilder: any?, -- HouseBuilder (optional, Roblox only)
 }
 
 -- Plain balance numbers, not ports: there is nothing to swap an
@@ -104,6 +106,7 @@ export type Rules = {
 	mineGrid: MineGrid.Rules,
 	digCooldown: number,
 	drill: Drill.Rules,
+	houseStages: { { id: string, name: string, cost: number } },
 }
 
 export type Container = {
@@ -140,6 +143,7 @@ export type Container = {
 		unlockDrill: any,
 		upgradeDrill: any,
 		runDrillTick: any,
+		purchaseHouseStage: any,
 		devGiveOres: any?,
 	},
 }
@@ -371,6 +375,13 @@ function Container.new(
 			drillRules = rules.drill,
 			random = math.random,
 		}, RunDrillTick),
+
+		purchaseHouseStage = setmetatable({
+			profileRepository = ports.profileRepository,
+			statsPublisher = ports.statsPublisher,
+			houseBuilder = ports.houseBuilder,
+			houseStages = rules.houseStages,
+		}, PurchaseHouseStage),
 	}
 
 	-- Dev-only affordances, never present in production: appended by the

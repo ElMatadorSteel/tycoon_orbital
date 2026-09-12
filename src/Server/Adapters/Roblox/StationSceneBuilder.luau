@@ -445,6 +445,8 @@ export type Config = {
 	shovelCost: number,
 	drillCost: number,
 	railgunKiosk: any?, -- RailgunKioskBuilder, wires the dispenser on the house plateau
+	houseBuilder: any?, -- HouseBuilder, builds the tycoon house on the plateau
+	profileRepository: any?, -- needed to read unlocked stages for the house
 }
 
 function StationSceneBuilder.new(config: Config)
@@ -690,6 +692,17 @@ function StationSceneBuilder:buildResearchMine(userId: number): boolean
 	local dispenser = zone:FindFirstChild("RailgunDispenser", true)
 	if kiosk and dispenser and dispenser:IsA("BasePart") then
 		kiosk:wireDispenser(dispenser)
+	end
+
+	-- Build the tycoon house on the house plateau, if the builder was
+	-- provided. Needs the profile to know which stages are already owned.
+	local house = self._config.houseBuilder
+	if house then
+		local plateauCFrame, plateauWidth, plateauDepth =
+			ResearchMineBuilder.plateauInfo(origin, span)
+		local repo = self._config.profileRepository
+		local unlocked = if repo then repo:load(userId).unlocked else {}
+		house:build(zone, plateauCFrame, plateauWidth, plateauDepth, userId, unlocked)
 	end
 
 	return true

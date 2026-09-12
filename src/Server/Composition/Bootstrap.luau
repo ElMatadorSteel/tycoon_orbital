@@ -43,6 +43,7 @@ local StationSceneBuilder = require("../Adapters/Roblox/StationSceneBuilder")
 local CharacterTeleporter = require("../Adapters/Roblox/CharacterTeleporter")
 local AsteroidFieldRenderer = require("../Adapters/Roblox/AsteroidFieldRenderer")
 local RailgunKioskBuilder = require("../Adapters/Roblox/RailgunKioskBuilder")
+local HouseBuilder = require("../Adapters/Roblox/HouseBuilder")
 local HumanoidMovementActuator = require("../Adapters/Roblox/HumanoidMovementActuator")
 
 -- Fails fast and loud: a half-wired lobby gives players who fall into the
@@ -111,6 +112,10 @@ function Bootstrap.start()
 		profileRepository = profileRepository,
 	})
 
+	local houseBuilder = HouseBuilder.new({
+		stages = Balance.House.Stages,
+	})
+
 	local sceneBuilder = StationSceneBuilder.new({
 		gridRules = gridRules,
 		maxLevel = Balance.Upgrade.MaxLevel,
@@ -128,6 +133,8 @@ function Bootstrap.start()
 		shovelCost = Balance.Research.Shovel.Cost,
 		drillCost = Balance.Research.Drill.Cost,
 		railgunKiosk = railgunKiosk,
+		houseBuilder = houseBuilder,
+		profileRepository = profileRepository,
 	})
 
 	-- Lobby scene contract -- unchanged from the legacy LobbyService: the
@@ -182,6 +189,7 @@ function Bootstrap.start()
 			teleporter = teleporter,
 			asteroidField = asteroidField,
 			movementActuator = movementActuator,
+			houseBuilder = houseBuilder,
 		},
 		sessionRegistry = SessionRegistry.new(),
 		rules = {
@@ -236,6 +244,7 @@ function Bootstrap.start()
 				dropTable = Balance.Research.Drill.DropTable,
 				upgradeCosts = Balance.Research.Drill.UpgradeCosts,
 			},
+			houseStages = Balance.House.Stages,
 		},
 		development = RunService:IsStudio(),
 	})
@@ -267,6 +276,10 @@ function Bootstrap.start()
 
 	sceneBuilder.drillPadTouched:Connect(function(userId: number)
 		container.useCases.unlockDrill:run(userId)
+	end)
+
+	houseBuilder.stagePadTouched:Connect(function(userId: number, stageId: string)
+		container.useCases.purchaseHouseStage:run(userId, stageId)
 	end)
 
 	-- We load the character ourselves, once the spawn point is known --

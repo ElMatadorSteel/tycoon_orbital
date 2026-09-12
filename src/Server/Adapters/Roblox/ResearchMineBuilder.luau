@@ -1412,4 +1412,15 @@ function ResearchMineBuilder.refuse(handle: PadHandle)
 	end)
 end
 
+-- Returns the plateau's world CFrame and dimensions for a given plot origin
+-- and span. Used by StationSceneBuilder to position the house on the plateau.
+function ResearchMineBuilder.plateauInfo(origin: CFrame, span: number): (CFrame, number, number)
+	local half = span / 2
+	local plateauWidth = span * 2
+	local plateauDepth = span * 2
+	local plateauZ = half + HOUSE_DISTANCE + plateauDepth / 2
+	local cframe = origin * CFrame.new(0, WALK_Y - 0.5, -plateauZ)
+	return cframe, plateauWidth, plateauDepth
+end
+
 return ResearchMineBuilder

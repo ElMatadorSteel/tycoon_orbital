@@ -314,6 +314,19 @@ local Balance = {
 		},
 	},
 
+	-- The tycoon house: progressive construction on the house plateau,
+	-- purchased stage by stage via walk-on pads. Each stage reveals a group
+	-- of parts from the authored model in ReplicatedStorage.HouseModels.
+	House = {
+		Stages = {
+			{ id = "Pelouse", name = "Pelouse", cost = 1000 },
+			{ id = "Fondations", name = "Fondations", cost = 2500 },
+			{ id = "MursRDC", name = "Murs (RDC)", cost = 5000 },
+			{ id = "MursEtage", name = "Murs (Étage)", cost = 8000 },
+			{ id = "Toit", name = "Toiture", cost = 12000 },
+		},
+	},
+
 	-- Presentation timings, read only by the client. Here rather than inline in
 	-- the controller because no magic number lives outside the configuration
 	-- (DEVELOPMENT.md) -- and because these are exactly the numbers someone will
