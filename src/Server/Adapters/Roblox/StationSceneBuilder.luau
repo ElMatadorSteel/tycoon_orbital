@@ -444,6 +444,7 @@ export type Config = {
 	-- Likewise, for the shovel pad down in the pit.
 	shovelCost: number,
 	drillCost: number,
+	railgunKiosk: any?, -- RailgunKioskBuilder, wires the dispenser on the house plateau
 }
 
 function StationSceneBuilder.new(config: Config)
@@ -680,6 +681,15 @@ function StationSceneBuilder:buildResearchMine(userId: number): boolean
 		}
 		self._drillPad[userId] = handle
 		self:_bindPad(handle, userId, self.drillPadTouched)
+	end
+
+	-- Wire the railgun dispenser on the house plateau, if the kiosk was
+	-- provided. The geometry is built by ResearchMineBuilder; the kiosk
+	-- only needs the Part to attach its Touched handler.
+	local kiosk = self._config.railgunKiosk
+	local dispenser = zone:FindFirstChild("RailgunDispenser", true)
+	if kiosk and dispenser and dispenser:IsA("BasePart") then
+		kiosk:wireDispenser(dispenser)
 	end
 
 	return true

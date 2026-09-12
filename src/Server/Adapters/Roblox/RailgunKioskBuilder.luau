@@ -22,37 +22,6 @@
 
 local Players = game:GetService("Players")
 
-local PAD_COLOR = Color3.fromRGB(72, 214, 255)
-local DISPENSER_COLOR = Color3.fromRGB(46, 52, 98)
-local PROP_COLOR = Color3.fromRGB(255, 205, 60)
-
-local function part(parent: Instance, name: string, props: { [string]: any }): BasePart
-	local instance = Instance.new("Part")
-	instance.Name = name
-	instance.Anchored = true
-	instance.CastShadow = false
-	instance.TopSurface = Enum.SurfaceType.Smooth
-	instance.BottomSurface = Enum.SurfaceType.Smooth
-	for key, value in props do
-		(instance :: any)[key] = value
-	end
-	instance.Parent = parent
-	return instance
-end
-
--- A small procedural prop, purely cosmetic -- what makes the dispenser
--- recognisable at a glance, not the actual Tool a player receives.
-local function buildDisplayProp(parent: Instance, cframe: CFrame)
-	part(parent, "RailgunProp", {
-		Size = Vector3.new(1, 1, 6),
-		CFrame = cframe * CFrame.new(0, 3, 0),
-		Color = PROP_COLOR,
-		Material = Enum.Material.Neon,
-		CanCollide = false,
-		CanQuery = false,
-	})
-end
-
 -- The Tool a player actually receives. An authored model when one lives at
 -- ReplicatedStorage.RailgunModel.Railgun (place-file only, same caveat as
 -- the drill and pickaxe templates). The procedural fallback below keeps the
@@ -80,7 +49,7 @@ local function buildToolTemplate(): Tool
 	local handle = Instance.new("Part")
 	handle.Name = "Handle"
 	handle.Size = Vector3.new(1, 1, 4)
-	handle.Color = PROP_COLOR
+	handle.Color = Color3.fromRGB(255, 205, 60)
 	handle.Material = Enum.Material.Neon
 	handle.CanCollide = false
 	handle.Parent = tool
@@ -101,8 +70,6 @@ local RailgunKioskBuilder = {}
 RailgunKioskBuilder.__index = RailgunKioskBuilder
 
 export type Config = {
-	lobby: Instance, -- workspace.Scenery.Lobby
-	lobbySpawn: BasePart, -- offset anchor -- see Bootstrap's LobbySpawn resolution
 	profileRepository: any, -- Ports.ProfileRepository
 }
 
@@ -113,41 +80,12 @@ function RailgunKioskBuilder.new(config: Config)
 	)
 end
 
-function RailgunKioskBuilder:build()
+-- Wires a dispenser Part's Touched event so players who own the railgun
+-- receive the tool when they walk through it. Called by StationSceneBuilder
+-- after building a player's research mine zone (the dispenser geometry now
+-- lives in ResearchMineBuilder, on the house plateau).
+function RailgunKioskBuilder:wireDispenser(dispenser: BasePart)
 	local config = self._config
-	local base = config.lobbySpawn.CFrame
-
-	----------------------------------------------------------------------
-	-- The pad: press E to buy. The purchase itself is entirely client-
-	-- initiated (Net.PurchaseRailgun) -- see MiningController -- so no
-	-- server-side Triggered binding lives here, unlike LaunchPad.
-	local pad = part(config.lobby, "RailgunPad", {
-		Size = Vector3.new(8, 1, 8),
-		CFrame = base * CFrame.new(-24, 0, -6),
-		Color = PAD_COLOR,
-		Material = Enum.Material.Neon,
-		CanCollide = true,
-	})
-
-	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Acheter"
-	prompt.ObjectText = "Railgun"
-	prompt.HoldDuration = 0.3
-	prompt.MaxActivationDistance = 10
-	prompt.Parent = pad
-
-	----------------------------------------------------------------------
-	-- The dispenser: walk through it to receive the Tool, once owned.
-	local dispenser = part(config.lobby, "RailgunDispenser", {
-		Size = Vector3.new(6, 8, 2),
-		CFrame = base * CFrame.new(-24, 4, -14),
-		Color = DISPENSER_COLOR,
-		Material = Enum.Material.Metal,
-		CanCollide = false, -- a gate to walk THROUGH, not a wall
-		CanTouch = true,
-	})
-	buildDisplayProp(dispenser, base * CFrame.new(-24, 0, -14))
-
 	dispenser.Touched:Connect(function(hit: BasePart)
 		local character = hit:FindFirstAncestorOfClass("Model")
 		local player = character and Players:GetPlayerFromCharacter(character)
@@ -160,7 +98,7 @@ function RailgunKioskBuilder:build()
 			return
 		end
 		if hasRailgunTool(player) then
-			return -- idempotent: standing in the gate doesn't spam clones
+			return
 		end
 
 		local clone = self._toolTemplate:Clone()

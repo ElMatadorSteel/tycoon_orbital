@@ -107,6 +107,10 @@ function Bootstrap.start()
 		radius = Balance.Grid.Radius,
 	}
 
+	local railgunKiosk = RailgunKioskBuilder.new({
+		profileRepository = profileRepository,
+	})
+
 	local sceneBuilder = StationSceneBuilder.new({
 		gridRules = gridRules,
 		maxLevel = Balance.Upgrade.MaxLevel,
@@ -123,6 +127,7 @@ function Bootstrap.start()
 		researchMineCost = Balance.Research.Mine.Cost,
 		shovelCost = Balance.Research.Shovel.Cost,
 		drillCost = Balance.Research.Drill.Cost,
+		railgunKiosk = railgunKiosk,
 	})
 
 	-- Lobby scene contract -- unchanged from the legacy LobbyService: the
@@ -161,13 +166,6 @@ function Bootstrap.start()
 		asteroidsParent = asteroidsParent,
 		lifetime = Balance.Mining.Railgun.AsteroidLifetime,
 	})
-
-	local railgunKiosk = RailgunKioskBuilder.new({
-		lobby = lobby,
-		lobbySpawn = lobbySpawn,
-		profileRepository = profileRepository,
-	})
-	railgunKiosk:build()
 
 	-- Watches PlayerAdded itself, so it must exist before anyone can join:
 	-- built here rather than lazily on the first dev command.

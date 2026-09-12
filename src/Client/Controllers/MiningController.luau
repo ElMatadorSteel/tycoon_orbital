@@ -337,15 +337,41 @@ end
 -- funds, already owned), and only the client can show a toast for that.
 
 function MiningController:_bindPad()
-	local scenery = workspace:WaitForChild("Scenery")
-	local lobby = scenery:WaitForChild("Lobby")
-	local pad = lobby:WaitForChild("RailgunPad")
-	local prompt = pad:WaitForChild("ProximityPrompt") :: ProximityPrompt
+	local player = Players.LocalPlayer
 
-	prompt.Triggered:Connect(function()
-		local ok, reason = Net.PurchaseRailgun:InvokeServer()
-		self:_toastMessage(if ok then "Railgun acheté !" else tostring(reason), not ok)
-	end)
+	-- The railgun pad now lives on the house plateau, inside the player's
+	-- own ResearchMine zone. It appears only after the mine is built, so
+	-- we search for it dynamically under Stations.
+	local stations = workspace:WaitForChild("Stations")
+	local function tryBind()
+		local zone = stations:FindFirstChild(`ResearchMine_{player.UserId}`, true)
+		if not zone then
+			return false
+		end
+		local pad = zone:FindFirstChild("RailgunPad", true)
+		if not pad then
+			return false
+		end
+		local prompt = pad:FindFirstChildOfClass("ProximityPrompt")
+		if not prompt then
+			return false
+		end
+		prompt.Triggered:Connect(function()
+			local ok, reason = Net.PurchaseRailgun:InvokeServer()
+			self:_toastMessage(if ok then "Railgun acheté !" else tostring(reason), not ok)
+		end)
+		return true
+	end
+
+	if not tryBind() then
+		-- The mine may not exist yet; retry when new descendants appear.
+		local conn
+		conn = stations.DescendantAdded:Connect(function(desc)
+			if desc.Name == "RailgunPad" and tryBind() then
+				conn:Disconnect()
+			end
+		end)
+	end
 end
 
 function MiningController:Start()

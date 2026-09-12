@@ -114,6 +114,10 @@ local STAIR_WIDTHS = { 14, 12, 10 }
 -- machine, not underneath it.
 local STAIR_RUNS = { 18, 18, 11 }
 
+-- House bridge: extends in -Z (opposite the mine) with a plateau at the end.
+-- The plateau is 2× the station deck in each dimension (width and depth).
+local HOUSE_DISTANCE = 160
+
 -- Radius of the drill's plinth. Sized to the model that stands on it (about
 -- 19 x 20 studs) with a little margin, and small enough that the foot of the
 -- staircase clears it.
@@ -1050,6 +1054,239 @@ local function buildSurfacePad(model: Model, origin: CFrame, centreZ: number)
 	pad:SetAttribute("SurfaceZ", surfaceCFrame.Position.Z)
 end
 
+----------------------------------------------------------------------
+-- House bridge -- mirrors the mine gangway but extends in -Z
+
+local function buildHouseApproach(parent: Instance, origin: CFrame, half: number)
+	for index = 1, 2 do
+		local top = index * (WALK_Y / 2)
+		part(parent, "HouseStep", {
+			Size = Vector3.new(STEP_WIDTH, top + 0.5, 4),
+			CFrame = origin * CFrame.new(0, (top - 0.5) / 2, -(half - 8 + index * 4)),
+			Color = PALETTE.Structure,
+			Material = Enum.Material.Metal,
+		})
+	end
+
+	part(parent, "HouseLanding", {
+		Size = Vector3.new(STEP_WIDTH + 6, 1, LANDING_DEPTH),
+		CFrame = origin * CFrame.new(0, WALK_Y - 0.5, -(half + 2 + LANDING_DEPTH / 2)),
+		Color = PALETTE.Structure,
+		Material = Enum.Material.DiamondPlate,
+	})
+end
+
+local function buildHouseGangway(model: Model, origin: CFrame, half: number)
+	local startZ = half + 2 + LANDING_DEPTH
+	local endZ = half + HOUSE_DISTANCE
+	local length = endZ - startZ
+	local count = math.max(1, math.round(length / BRIDGE_SEGMENT))
+	local segment = length / count
+	local middle = startZ + length / 2
+
+	for index = 1, count do
+		part(model, "HouseGangway", {
+			Size = Vector3.new(BRIDGE_WIDTH, 1, segment),
+			CFrame = origin * CFrame.new(0, WALK_Y - 0.5, -(startZ + (index - 0.5) * segment)),
+			Color = if index % 2 == 0 then PALETTE.Structure else PALETTE.RockDark,
+			Material = Enum.Material.DiamondPlate,
+		})
+	end
+
+	part(model, "HouseGangwaySpine", {
+		Size = Vector3.new(3.4, 2.4, length),
+		CFrame = origin * CFrame.new(0, WALK_Y - 2.1, -middle),
+		Color = PALETTE.Structure,
+		Material = Enum.Material.Metal,
+		CanCollide = false,
+	})
+
+	for _, side in { -1, 1 } do
+		part(model, "HouseGangwayRail", {
+			Size = Vector3.new(0.6, 3, length),
+			CFrame = origin
+				* CFrame.new(side * (BRIDGE_WIDTH / 2 - 0.3), WALK_Y + 1.5 - SEAT, -middle),
+			Color = PALETTE.Structure,
+			Material = Enum.Material.Metal,
+		})
+		part(model, "HouseGangwayGlow", {
+			Size = Vector3.new(0.35, 0.35, length),
+			CFrame = origin * CFrame.new(side * (BRIDGE_WIDTH / 2 - 0.3), WALK_Y + 2.85, -middle),
+			Color = PALETTE.Trim,
+			Material = Enum.Material.Neon,
+			CanCollide = false,
+			CanQuery = false,
+		})
+	end
+
+	local lamps = math.max(2, math.floor(length / 40))
+	for index = 0, lamps do
+		local z = startZ + (length / lamps) * index
+		for _, side in { -1, 1 } do
+			part(model, "HouseGangwayPost", {
+				Size = Vector3.new(0.7, 7, 0.7),
+				CFrame = origin
+					* CFrame.new(side * (BRIDGE_WIDTH / 2 - 0.3), WALK_Y + 3.4 - SEAT, -z),
+				Color = PALETTE.Structure,
+				Material = Enum.Material.Metal,
+				CanCollide = false,
+			})
+			local bulb = part(model, "HouseGangwayLamp", {
+				Shape = Enum.PartType.Ball,
+				Size = Vector3.new(1.4, 1.4, 1.4),
+				CFrame = origin * CFrame.new(side * (BRIDGE_WIDTH / 2 - 0.3), WALK_Y + 7.2, -z),
+				Color = PALETTE.Trim,
+				Material = Enum.Material.Neon,
+				CanCollide = false,
+				CanQuery = false,
+			})
+			pointLight(bulb, PALETTE.Trim, 26, 1.2)
+		end
+	end
+end
+
+local function buildHousePlateau(model: Model, origin: CFrame, half: number, span: number)
+	local plateauWidth = span * 2
+	local plateauDepth = span * 2
+	local plateauZ = half + HOUSE_DISTANCE + plateauDepth / 2
+
+	-- Railgun kiosk: near the bridge arrival, offset to the right
+	local kioskZ = half + HOUSE_DISTANCE + 8
+	local railgunPad = part(model, "RailgunPad", {
+		Size = Vector3.new(8, 0.6, 8),
+		CFrame = origin * CFrame.new(10, WALK_Y + 0.3, -kioskZ),
+		Color = PALETTE.Trim,
+		Material = Enum.Material.Neon,
+		CanCollide = true,
+	})
+	pointLight(railgunPad, PALETTE.Trim, 18, 1.6)
+
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.ActionText = "Acheter"
+	prompt.ObjectText = "Railgun"
+	prompt.HoldDuration = 0.3
+	prompt.MaxActivationDistance = 10
+	prompt.Parent = railgunPad
+
+	part(model, "RailgunDispenser", {
+		Size = Vector3.new(6, 8, 2),
+		CFrame = origin * CFrame.new(10, WALK_Y + 4, -(kioskZ - 6)) * CFrame.Angles(0, math.pi, 0),
+		Color = Color3.fromRGB(46, 52, 98),
+		Material = Enum.Material.Metal,
+		CanCollide = false,
+		CanTouch = true,
+	})
+
+	-- Cosmetic railgun prop on the dispenser
+	part(model, "RailgunProp", {
+		Size = Vector3.new(1, 1, 6),
+		CFrame = origin * CFrame.new(10, WALK_Y + 7, -(kioskZ - 6)) * CFrame.Angles(0, math.pi, 0),
+		Color = Color3.fromRGB(255, 205, 60),
+		Material = Enum.Material.Neon,
+		CanCollide = false,
+		CanQuery = false,
+	})
+
+	-- Main platform
+	part(model, "HousePlateau", {
+		Size = Vector3.new(plateauWidth, 1, plateauDepth),
+		CFrame = origin * CFrame.new(0, WALK_Y - 0.5, -plateauZ),
+		Color = PALETTE.Structure,
+		Material = Enum.Material.DiamondPlate,
+	})
+
+	-- Edge rails
+	for _, side in { -1, 1 } do
+		part(model, "HousePlateauRail", {
+			Size = Vector3.new(0.6, 3, plateauDepth),
+			CFrame = origin
+				* CFrame.new(side * (plateauWidth / 2 - 0.3), WALK_Y + 1.5 - SEAT, -plateauZ),
+			Color = PALETTE.Structure,
+			Material = Enum.Material.Metal,
+		})
+		part(model, "HousePlateauGlow", {
+			Size = Vector3.new(0.35, 0.35, plateauDepth),
+			CFrame = origin * CFrame.new(side * (plateauWidth / 2 - 0.3), WALK_Y + 2.85, -plateauZ),
+			Color = PALETTE.Trim,
+			Material = Enum.Material.Neon,
+			CanCollide = false,
+			CanQuery = false,
+		})
+	end
+
+	-- Front rails: two segments flanking the bridge opening
+	local frontZ = half + HOUSE_DISTANCE
+	local sideLen = (plateauWidth - BRIDGE_WIDTH) / 2
+	for _, side in { -1, 1 } do
+		local cx = side * (BRIDGE_WIDTH / 2 + sideLen / 2)
+		part(model, "HousePlateauFrontRail", {
+			Size = Vector3.new(sideLen, 3, 0.6),
+			CFrame = origin * CFrame.new(cx, WALK_Y + 1.5 - SEAT, -(frontZ + 0.3)),
+			Color = PALETTE.Structure,
+			Material = Enum.Material.Metal,
+		})
+		part(model, "HousePlateauFrontGlow", {
+			Size = Vector3.new(sideLen, 0.35, 0.35),
+			CFrame = origin * CFrame.new(cx, WALK_Y + 2.85, -(frontZ + 0.3)),
+			Color = PALETTE.Trim,
+			Material = Enum.Material.Neon,
+			CanCollide = false,
+			CanQuery = false,
+		})
+	end
+
+	-- Back rail
+	local backZ = half + HOUSE_DISTANCE + plateauDepth
+	part(model, "HousePlateauBackRail", {
+		Size = Vector3.new(plateauWidth, 3, 0.6),
+		CFrame = origin * CFrame.new(0, WALK_Y + 1.5 - SEAT, -(backZ - 0.3)),
+		Color = PALETTE.Structure,
+		Material = Enum.Material.Metal,
+	})
+	part(model, "HousePlateauBackGlow", {
+		Size = Vector3.new(plateauWidth, 0.35, 0.35),
+		CFrame = origin * CFrame.new(0, WALK_Y + 2.85, -(backZ - 0.3)),
+		Color = PALETTE.Trim,
+		Material = Enum.Material.Neon,
+		CanCollide = false,
+		CanQuery = false,
+	})
+
+	-- Corner lamps
+	for _, dx in { -1, 1 } do
+		for _, dz in { 0, 1 } do
+			local z = half + HOUSE_DISTANCE + dz * plateauDepth
+			part(model, "HousePlateauPost", {
+				Size = Vector3.new(0.7, 7, 0.7),
+				CFrame = origin
+					* CFrame.new(dx * (plateauWidth / 2 - 0.3), WALK_Y + 3.4 - SEAT, -z),
+				Color = PALETTE.Structure,
+				Material = Enum.Material.Metal,
+				CanCollide = false,
+			})
+			local bulb = part(model, "HousePlateauLamp", {
+				Shape = Enum.PartType.Ball,
+				Size = Vector3.new(1.4, 1.4, 1.4),
+				CFrame = origin * CFrame.new(dx * (plateauWidth / 2 - 0.3), WALK_Y + 7.2, -z),
+				Color = PALETTE.Trim,
+				Material = Enum.Material.Neon,
+				CanCollide = false,
+				CanQuery = false,
+			})
+			pointLight(bulb, PALETTE.Trim, 26, 1.2)
+		end
+	end
+
+	-- Spine under the platform
+	part(model, "HousePlateauSpine", {
+		Size = Vector3.new(3.4, 2.4, plateauDepth),
+		CFrame = origin * CFrame.new(0, WALK_Y - 2.1, -plateauZ),
+		Color = PALETTE.Structure,
+		Material = Enum.Material.Metal,
+		CanCollide = false,
+	})
+end
+
 function ResearchMineBuilder.buildZone(parent: Instance, origin: CFrame, span: number): Model
 	local half = span / 2
 	local centreZ = half + MINE_DISTANCE
@@ -1097,6 +1334,11 @@ function ResearchMineBuilder.buildZone(parent: Instance, origin: CFrame, span: n
 
 	buildDrillSite(model, origin, centreZ)
 	buildSurfacePad(model, origin, centreZ)
+
+	-- House bridge: opposite side of the deck (-Z)
+	buildHouseApproach(model, origin, half)
+	buildHouseGangway(model, origin, half)
+	buildHousePlateau(model, origin, half, span)
 
 	model.ModelStreamingMode = Enum.ModelStreamingMode.Default
 	model.Parent = parent
