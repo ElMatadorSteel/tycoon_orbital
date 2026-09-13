@@ -54,16 +54,16 @@ local STAGE_FOLDERS = {
 -- y is the extra height above the ground floor (0 = ground, ~13 = upper).
 local PAD_SIZE = 6
 local STAGE_PAD_OFFSETS: { [string]: { x: number, z: number, y: number } } = {
-	Jardin        = { x =   0, z =  -7, y =  0 },  -- garden perimeter
-	Fondations    = { x =  -4, z =  11, y =  0 },  -- foundation centre
-	MursExterieurs= { x =  -4, z =  11, y =  0 },  -- centre of foundations
-	Garage        = { x =  34, z = -33, y =  2 },  -- inside the garage
+	Jardin        = { x =   0, z = -55, y =  0 },  -- front yard, away from house
+	Fondations    = { x =   0, z =  50, y =  0 },  -- behind the house
+	MursExterieurs= { x =  50, z =   0, y =  0 },  -- right of house
+	Garage        = { x =  29, z = -40, y =  2 },  -- inside the garage
 	Cuisine       = { x = -25, z =   0, y =  2 },  -- inside the kitchen
 	Salon         = { x =   2, z =  23, y =  2 },  -- inside the living room
 	SalleAManger  = { x = -32, z =  23, y =  2 },  -- inside the dining room
 	Entree        = { x =  -3, z =  -9, y =  2 },  -- inside the entrance
 	Etage         = { x =  -8, z =  -7, y = 14 },  -- upstairs landing
-	Toit          = { x = -18, z =  11, y = 14 },  -- upstairs (roof)
+	Toit          = { x = -13, z =   7, y = 14 },  -- upstairs bathroom, near stairs
 }
 
 local function part(parent: Instance, name: string, props: { [string]: any }): BasePart
@@ -534,7 +534,9 @@ function HouseBuilder:reset(userId: number)
 	local pads = self._pads[userId]
 	if pads then
 		for _, handle in pads do
-			handle.pad:Destroy()
+			if handle.pad then
+				handle.pad:Destroy()
+			end
 		end
 		self._pads[userId] = nil
 	end
