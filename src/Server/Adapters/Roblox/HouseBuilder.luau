@@ -49,8 +49,11 @@ local STAGE_FOLDERS = {
 	Toit = "Stage10_Toit",
 }
 
--- Per-stage pad positions relative to the house centre.  Pads sit inside
--- the room/area they unlock so the player sees what they're buying.
+-- The authored model is small; scale it up so the rooms feel right.
+local HOUSE_SCALE = 2
+
+-- Per-stage pad positions relative to the house centre (at scale 1).
+-- Multiplied by HOUSE_SCALE at runtime so they track the scaled geometry.
 -- y is the extra height above the ground floor (0 = ground, ~13 = upper).
 local PAD_SIZE = 6
 local STAGE_PAD_OFFSETS: { [string]: { x: number, z: number, y: number } } = {
@@ -106,7 +109,7 @@ local function label(pad: BasePart, title: string, subtitle: string)
 	gui.Name = "Sign"
 	gui.Size = UDim2.fromScale(8, 3)
 	gui.AlwaysOnTop = false
-	gui.MaxDistance = 80
+	gui.MaxDistance = 80 * HOUSE_SCALE
 	gui.Adornee = anchor
 	gui.Parent = anchor
 
@@ -140,7 +143,7 @@ end
 local DOOR_OPEN_ANGLE = math.rad(-90)
 local DOOR_CLOSE_DELAY = 3
 local DOOR_TWEEN = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-local DOOR_DETECT_RANGE = 8
+local DOOR_DETECT_RANGE = 8 * HOUSE_SCALE
 
 local function setupAutoDoor(doorPart: BasePart)
 	-- Determine door width axis: the axis that is NOT thin and NOT height.
@@ -342,9 +345,10 @@ function HouseBuilder:build(
 		return
 	end
 
-	-- Clone the house and place it centred on the plateau
+	-- Clone the house, scale it up, and place it centred on the plateau
 	local house = template:Clone()
 	house.Name = `House_{userId}`
+	house:ScaleTo(HOUSE_SCALE)
 
 	-- Get the model's bounding box to position it correctly
 	local box, size = house:GetBoundingBox()
@@ -377,9 +381,9 @@ function HouseBuilder:build(
 	local pads: { PadHandle } = {}
 	for index, stage in stages do
 		local offsets = STAGE_PAD_OFFSETS[stage.id]
-		local padX = if offsets then offsets.x else (index - 1) * (PAD_SIZE + 4)
-		local padZ = if offsets then offsets.z else 0
-		local padY = if offsets then offsets.y else 0
+		local padX = if offsets then offsets.x * HOUSE_SCALE else (index - 1) * (PAD_SIZE + 4)
+		local padZ = if offsets then offsets.z * HOUSE_SCALE else 0
+		local padY = if offsets then offsets.y * HOUSE_SCALE else 0
 		local padCFrame = plateauCFrame * CFrame.new(padX, 0.8 + padY, padZ)
 
 		local alreadyOwned = unlockedStages["House_" .. stage.id] == true
