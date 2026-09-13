@@ -246,8 +246,13 @@ local function showDescendants(folder: Instance)
 	for _, desc in folder:GetDescendants() do
 		if desc:IsA("BasePart") then
 			desc.Transparency = 0
-			desc.CanCollide = true
 			desc.CanQuery = true
+			-- Thin decorative parts (trim, shelf edges, counter lips) should
+			-- not block the player.  Structural walls are always ≥ 1 stud
+			-- in every dimension even after scaling.
+			local s = desc.Size
+			local minDim = math.min(s.X, s.Y, s.Z)
+			desc.CanCollide = minDim > 0.5
 			-- Set up automatic doors for tagged parts
 			if desc:GetAttribute("Door") then
 				setupAutoDoor(desc)
