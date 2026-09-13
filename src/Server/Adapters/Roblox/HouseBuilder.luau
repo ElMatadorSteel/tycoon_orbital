@@ -49,11 +49,22 @@ local STAGE_FOLDERS = {
 	Toit = "Stage10_Toit",
 }
 
--- Pad placement offsets on the plateau, relative to the plateau centre.
--- Each pad leads to the next, laid out in a line along +X so the player
--- walks past them in order. Close to the bridge arrival side (-Z edge of
--- the plateau) so they are found naturally.
+-- Per-stage pad positions relative to the house centre.  Pads sit inside
+-- the room/area they unlock so the player sees what they're buying.
+-- y is the extra height above the ground floor (0 = ground, ~13 = upper).
 local PAD_SIZE = 6
+local STAGE_PAD_OFFSETS: { [string]: { x: number, z: number, y: number } } = {
+	Jardin        = { x =   0, z =  -7, y =  0 },  -- garden perimeter
+	Fondations    = { x =  -4, z =  11, y =  0 },  -- foundation centre
+	MursExterieurs= { x =  -4, z =  11, y =  0 },  -- centre of foundations
+	Garage        = { x =  29, z = -40, y =  0 },  -- inside the garage
+	Cuisine       = { x = -26, z =  -3, y =  0 },  -- inside the kitchen
+	Salon         = { x =   2, z =  23, y =  0 },  -- inside the living room
+	SalleAManger  = { x = -32, z =  23, y =  0 },  -- inside the dining room
+	Entree        = { x =  -3, z =  -9, y =  0 },  -- inside the entrance
+	Etage         = { x =  -8, z =  -7, y = 14 },  -- upstairs landing
+	Toit          = { x = -18, z =  11, y = 14 },  -- upstairs (roof)
+}
 
 local function part(parent: Instance, name: string, props: { [string]: any }): BasePart
 	local instance = Instance.new("Part")
@@ -322,7 +333,7 @@ function HouseBuilder:build(
 	parent: Instance,
 	plateauCFrame: CFrame,
 	_plateauWidth: number,
-	plateauDepth: number,
+	_plateauDepth: number,
 	userId: number,
 	unlockedStages: { [string]: boolean }
 )
@@ -360,42 +371,41 @@ function HouseBuilder:build(
 	house.Parent = parent
 	self._house[userId] = house
 
-	-- Build purchase pads along the -Z edge of the plateau (near the bridge)
+	-- Place each purchase pad near the area it builds.
 	local stages = self._config.stages
-	local totalPads = #stages
-	local spacing = PAD_SIZE + 4
-	local startX = -(totalPads - 1) * spacing / 2
 
 	local pads: { PadHandle } = {}
 	for index, stage in stages do
-		local padX = startX + (index - 1) * spacing
-		-- Place pads on the -Z side of the plateau, offset from centre
-		local padZ = plateauDepth / 2 - 14
-		local padCFrame = plateauCFrame * CFrame.new(padX, 0.8, padZ)
+		local offsets = STAGE_PAD_OFFSETS[stage.id]
+		local padX = if offsets then offsets.x else (index - 1) * (PAD_SIZE + 4)
+		local padZ = if offsets then offsets.z else 0
+		local padY = if offsets then offsets.y else 0
+		local padCFrame = plateauCFrame * CFrame.new(padX, 0.8 + padY, padZ)
 
 		local alreadyOwned = unlockedStages["House_" .. stage.id] == true
 
-		local pad = part(parent, `HousePad_{stage.id}`, {
-			Size = Vector3.new(PAD_SIZE, 0.6, PAD_SIZE),
-			CFrame = padCFrame,
-			Color = if alreadyOwned then PALETTE.PadOpen else PALETTE.PadLocked,
-			Material = Enum.Material.Neon,
-		})
-		pointLight(pad, if alreadyOwned then PALETTE.PadOpen else PALETTE.PadLocked, 18, 1.6)
-
-		local sign = label(pad, stage.name, if alreadyOwned then "Construit" else money(stage.cost))
-
-		local handle: PadHandle = {
-			pad = pad,
-			sign = sign,
-			stageId = stage.id,
-		}
-		table.insert(pads, handle)
-
 		if alreadyOwned then
-			-- Already purchased: reveal stage immediately
+			-- Already purchased: reveal stage, no pad needed.
 			self:_revealStage(userId, stage.id)
+			-- Still need a handle entry so index arithmetic stays correct.
+			table.insert(pads, { pad = nil :: any, sign = nil :: any, stageId = stage.id })
 		else
+			local pad = part(parent, `HousePad_{stage.id}`, {
+				Size = Vector3.new(PAD_SIZE, 0.6, PAD_SIZE),
+				CFrame = padCFrame,
+				Color = PALETTE.PadLocked,
+				Material = Enum.Material.Neon,
+			})
+			pointLight(pad, PALETTE.PadLocked, 18, 1.6)
+
+			local sign = label(pad, stage.name, money(stage.cost))
+
+			local handle: PadHandle = {
+				pad = pad,
+				sign = sign,
+				stageId = stage.id,
+			}
+			table.insert(pads, handle)
 			-- Wire the pad's Touched to fire the signal
 			pad.Touched:Connect(function(hit: BasePart)
 				-- Only fire for the owning player
@@ -410,24 +420,24 @@ function HouseBuilder:build(
 				end
 				self.stagePadTouched:Fire(userId, stage.id)
 			end)
-		end
 
-		-- Only show the NEXT available pad; hide future ones
-		if not alreadyOwned and index > 1 then
-			local prevOwned = unlockedStages["House_" .. stages[index - 1].id] == true
-			if not prevOwned then
-				pad.Transparency = 1
-				pad.CanCollide = false
-				local anchor = pad:FindFirstChild("SignAnchor")
-				if anchor then
-					local gui = anchor:FindFirstChild("Sign")
-					if gui then
-						gui.Enabled = false
+			-- Only show the NEXT available pad; hide future ones
+			if index > 1 then
+				local prevOwned = unlockedStages["House_" .. stages[index - 1].id] == true
+				if not prevOwned then
+					pad.Transparency = 1
+					pad.CanCollide = false
+					local anchor = pad:FindFirstChild("SignAnchor")
+					if anchor then
+						local gui = anchor:FindFirstChild("Sign")
+						if gui then
+							gui.Enabled = false
+						end
 					end
-				end
-				local light = pad:FindFirstChildOfClass("PointLight")
-				if light then
-					light.Enabled = false
+					local light = pad:FindFirstChildOfClass("PointLight")
+					if light then
+						light.Enabled = false
+					end
 				end
 			end
 		end
@@ -464,27 +474,13 @@ function HouseBuilder:unlockStage(userId: number, stageId: string)
 
 	for index, handle in pads do
 		if handle.stageId == stageId then
-			handle.pad.Color = PALETTE.PadOpen
+			-- Destroy the pad now that the stage is built.
 			handle.pad:SetAttribute("Owned", true)
-			local light = handle.pad:FindFirstChildOfClass("PointLight")
-			if light then
-				light.Color = PALETTE.PadOpen
-			end
-			local anchor = handle.pad:FindFirstChild("SignAnchor")
-			if anchor then
-				local sign = anchor:FindFirstChild("Sign")
-				if sign then
-					local detail = sign:FindFirstChild("Detail")
-					if detail and detail:IsA("TextLabel") then
-						detail.Text = "Construit"
-						detail.TextColor3 = PALETTE.PadOpen
-					end
-				end
-			end
+			handle.pad:Destroy()
 
 			-- Show the NEXT pad (make it visible)
 			local nextHandle = pads[index + 1]
-			if nextHandle then
+			if nextHandle and nextHandle.pad then
 				nextHandle.pad.Transparency = 0
 				nextHandle.pad.CanCollide = true
 				local nextAnchor = nextHandle.pad:FindFirstChild("SignAnchor")
@@ -511,7 +507,7 @@ function HouseBuilder:refuse(userId: number, stageId: string)
 		return
 	end
 	for _, handle in pads do
-		if handle.stageId == stageId then
+		if handle.stageId == stageId and handle.pad then
 			if handle.pad:GetAttribute("Refusing") then
 				return
 			end
