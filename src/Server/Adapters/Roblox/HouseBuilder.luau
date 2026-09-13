@@ -57,8 +57,8 @@ local STAGE_PAD_OFFSETS: { [string]: { x: number, z: number, y: number } } = {
 	Jardin        = { x =   0, z =  -7, y =  0 },  -- garden perimeter
 	Fondations    = { x =  -4, z =  11, y =  0 },  -- foundation centre
 	MursExterieurs= { x =  -4, z =  11, y =  0 },  -- centre of foundations
-	Garage        = { x =  29, z = -40, y =  0 },  -- inside the garage
-	Cuisine       = { x = -26, z =  -3, y =  0 },  -- inside the kitchen
+	Garage        = { x =  34, z = -33, y =  2 },  -- inside the garage
+	Cuisine       = { x = -25, z =   0, y =  3 },  -- inside the kitchen
 	Salon         = { x =   2, z =  23, y =  0 },  -- inside the living room
 	SalleAManger  = { x = -32, z =  23, y =  0 },  -- inside the dining room
 	Entree        = { x =  -3, z =  -9, y =  0 },  -- inside the entrance
