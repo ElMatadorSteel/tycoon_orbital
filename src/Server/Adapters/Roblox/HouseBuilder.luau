@@ -57,16 +57,28 @@ local HOUSE_SCALE = 1.5
 -- y is the extra height above the ground floor (0 = ground, ~13 = upper).
 local PAD_SIZE = 6
 local STAGE_PAD_OFFSETS: { [string]: { x: number, z: number, y: number } } = {
-	Jardin        = { x =   0, z = -55, y =  0 },  -- front yard, away from house
-	Fondations    = { x =   0, z =  50, y =  0 },  -- behind the house
-	MursExterieurs= { x =  50, z =   0, y =  0 },  -- right of house
-	Garage        = { x =  29, z = -40, y =  2 },  -- inside the garage
-	Cuisine       = { x = -25, z =   0, y =  2 },  -- inside the kitchen
-	Salon         = { x =   2, z =  23, y =  2 },  -- inside the living room
-	SalleAManger  = { x = -32, z =  23, y =  2 },  -- inside the dining room
-	Entree        = { x =  -3, z =  -9, y =  2 },  -- inside the entrance
-	Etage         = { x =  -8, z =  -7, y = 14 },  -- upstairs landing
-	Toit          = { x = -13, z =   7, y = 14 },  -- upstairs bathroom, near stairs
+	Jardin = { x = 0, z = -55, y = 0 }, -- front yard, away from house
+	Fondations = { x = 0, z = 50, y = 0 }, -- behind the house
+	MursExterieurs = { x = 50, z = 0, y = 0 }, -- right of house
+	Garage = { x = 29, z = -40, y = 2 }, -- inside the garage
+	Cuisine = { x = -25, z = 0, y = 2 }, -- inside the kitchen
+	Salon = { x = 2, z = 23, y = 2 }, -- inside the living room
+	SalleAManger = { x = -32, z = 23, y = 2 }, -- inside the dining room
+	Entree = { x = -3, z = -9, y = 2 }, -- inside the entrance
+	Etage = { x = -8, z = -7, y = 14 }, -- upstairs landing
+	Toit = { x = -13, z = 7, y = 14 }, -- upstairs bathroom, near stairs
+}
+
+-- Invisible floor fill for upstairs geometry gaps (at scale 1, relative to
+-- house pivot).  The authored model's upper floor has a gap in the front-left
+-- section where rotated floor tiles don't cover after ScaleTo.  An invisible
+-- Part fills it so the player doesn't fall through.
+local UPSTAIRS_FLOOR_FILL = {
+	x = -18.2,
+	z = 12.1,
+	y = -10.3,
+	sizeX = 25,
+	sizeZ = 14,
 }
 
 local function part(parent: Instance, name: string, props: { [string]: any }): BasePart
@@ -247,12 +259,22 @@ local function showDescendants(folder: Instance)
 		if desc:IsA("BasePart") then
 			desc.Transparency = 0
 			desc.CanQuery = true
-			-- Thin decorative parts (trim, shelf edges, counter lips) should
-			-- not block the player.  Structural walls are always ≥ 1 stud
-			-- in every dimension even after scaling.
+			-- Thin decorative parts (counter lips, shelf edges, small trim)
+			-- block the player after scaling.  Detect them as: thin in one
+			-- horizontal axis (X or Z ≤ 0.5) AND short (Y ≤ 1.5).  Thin
+			-- floors (Y ≤ 0.5 but wide X/Z) and thin walls (X or Z ≤ 0.5
+			-- but tall Y) keep collision.
+			--
+			-- Full-height spanning walls (Y > 25) are exterior walls from
+			-- upper-floor stages that extend down to ground level.  Their
+			-- ground-floor collision is already provided by
+			-- Stage03_MursExterieurs, so disabling them prevents blocking
+			-- ground-floor navigation when upper stages are revealed.
 			local s = desc.Size
-			local minDim = math.min(s.X, s.Y, s.Z)
-			desc.CanCollide = minDim > 0.5
+			local thinHorizontal = s.X <= 0.5 or s.Z <= 0.5
+			local short = s.Y <= 1.5
+			local spanning = s.Y > 25
+			desc.CanCollide = not (thinHorizontal and short) and not spanning
 			-- Set up automatic doors for tagged parts
 			if desc:GetAttribute("Door") then
 				setupAutoDoor(desc)
@@ -368,6 +390,33 @@ function HouseBuilder:build(
 		CFrame.new(plateauCFrame.Position.X, box.Position.Y + offset, plateauCFrame.Position.Z)
 			* CFrame.Angles(0, 0, 0)
 	)
+
+	-- Invisible floor fill for upstairs geometry gap (see UPSTAIRS_FLOOR_FILL).
+	-- Always transparent, always collidable.  At Y ≈ 24 it's far above the
+	-- ground floor so it never interferes with ground-level gameplay.
+	do
+		local pivot = house:GetPivot().Position
+		local fill = Instance.new("Part")
+		fill.Name = "UpstairsFloorFill"
+		fill.Anchored = true
+		fill.Transparency = 1
+		fill.CanCollide = true
+		fill.CanQuery = false
+		fill.CastShadow = false
+		fill.TopSurface = Enum.SurfaceType.Smooth
+		fill.BottomSurface = Enum.SurfaceType.Smooth
+		fill.Size = Vector3.new(
+			UPSTAIRS_FLOOR_FILL.sizeX * HOUSE_SCALE,
+			0.3 * HOUSE_SCALE,
+			UPSTAIRS_FLOOR_FILL.sizeZ * HOUSE_SCALE
+		)
+		fill.CFrame = CFrame.new(
+			pivot.X + UPSTAIRS_FLOOR_FILL.x * HOUSE_SCALE,
+			pivot.Y + UPSTAIRS_FLOOR_FILL.y * HOUSE_SCALE,
+			pivot.Z + UPSTAIRS_FLOOR_FILL.z * HOUSE_SCALE
+		)
+		fill.Parent = house
+	end
 
 	-- Start with all stages hidden
 	for _, folderName in STAGE_FOLDERS do
