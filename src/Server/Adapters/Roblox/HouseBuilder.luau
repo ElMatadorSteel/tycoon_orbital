@@ -50,7 +50,7 @@ local STAGE_FOLDERS = {
 }
 
 -- The authored model is small; scale it up so the rooms feel right.
-local HOUSE_SCALE = 2
+local HOUSE_SCALE = 1.5
 
 -- Per-stage pad positions relative to the house centre (at scale 1).
 -- Multiplied by HOUSE_SCALE at runtime so they track the scaled geometry.
