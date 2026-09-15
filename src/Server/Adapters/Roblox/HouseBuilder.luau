@@ -236,6 +236,8 @@ end
 local function hideDescendants(folder: Instance)
 	for _, desc in folder:GetDescendants() do
 		if desc:IsA("BasePart") then
+			-- Save the authored CanCollide so showDescendants can restore it.
+			desc:SetAttribute("_origCanCollide", desc.CanCollide)
 			desc.Transparency = 1
 			desc.CanCollide = false
 			desc.CanQuery = false
@@ -259,22 +261,12 @@ local function showDescendants(folder: Instance)
 		if desc:IsA("BasePart") then
 			desc.Transparency = 0
 			desc.CanQuery = true
-			-- Thin decorative parts (counter lips, shelf edges, small trim)
-			-- block the player after scaling.  Detect them as: thin in one
-			-- horizontal axis (X or Z ≤ 0.5) AND short (Y ≤ 1.5).  Thin
-			-- floors (Y ≤ 0.5 but wide X/Z) and thin walls (X or Z ≤ 0.5
-			-- but tall Y) keep collision.
-			--
-			-- Full-height spanning walls (Y > 25) are exterior walls from
-			-- upper-floor stages that extend down to ground level.  Their
-			-- ground-floor collision is already provided by
-			-- Stage03_MursExterieurs, so disabling them prevents blocking
-			-- ground-floor navigation when upper stages are revealed.
-			local s = desc.Size
-			local thinHorizontal = s.X <= 0.5 or s.Z <= 0.5
-			local short = s.Y <= 1.5
-			local spanning = s.Y > 25
-			desc.CanCollide = not (thinHorizontal and short) and not spanning
+			-- Restore the model author's original CanCollide.  Parts that
+			-- were non-collidable in the template stay non-collidable,
+			-- preventing invisible blockers from decorative/visual-only
+			-- geometry.
+			local orig = desc:GetAttribute("_origCanCollide")
+			desc.CanCollide = if orig ~= nil then orig else true
 			-- Set up automatic doors for tagged parts
 			if desc:GetAttribute("Door") then
 				setupAutoDoor(desc)
