@@ -367,6 +367,7 @@ function HouseBuilder.new(config: Config)
 		-- Per-userId state
 		_pads = {} :: { [number]: { PadHandle } },
 		_house = {} :: { [number]: Model },
+		_plateau = {} :: { [number]: { cframe: CFrame, width: number, depth: number } },
 		-- Fired with (userId, stageId) when a player touches a locked pad.
 		stagePadTouched = Signal.new(),
 	}, HouseBuilder)
@@ -407,8 +408,8 @@ end
 function HouseBuilder:build(
 	parent: Instance,
 	plateauCFrame: CFrame,
-	_plateauWidth: number,
-	_plateauDepth: number,
+	plateauWidth: number,
+	plateauDepth: number,
 	userId: number,
 	unlockedStages: { [string]: boolean }
 )
@@ -446,6 +447,7 @@ function HouseBuilder:build(
 
 	house.Parent = parent
 	self._house[userId] = house
+	self._plateau[userId] = { cframe = plateauCFrame, width = plateauWidth, depth = plateauDepth }
 
 	-- Place each purchase pad near the area it builds.
 	local stages = self._config.stages
@@ -536,6 +538,24 @@ function HouseBuilder:_revealStage(userId: number, stageId: string)
 		return
 	end
 	showDescendants(folder)
+
+	-- When the garden is revealed, lay a grass surface over the entire plateau.
+	if stageId == "Jardin" and not house:FindFirstChild("PlateauGrass") then
+		local info = self._plateau[userId]
+		if info then
+			local grass = Instance.new("Part")
+			grass.Name = "PlateauGrass"
+			grass.Anchored = true
+			grass.Size = Vector3.new(info.width, 0.4, info.depth)
+			grass.CFrame = info.cframe * CFrame.new(0, 0.7, 0)
+			grass.Color = Color3.fromRGB(76, 153, 0)
+			grass.Material = Enum.Material.Grass
+			grass.TopSurface = Enum.SurfaceType.Smooth
+			grass.BottomSurface = Enum.SurfaceType.Smooth
+			grass.CastShadow = false
+			grass.Parent = house
+		end
+	end
 end
 
 -- Called by the use case after a successful purchase.
