@@ -69,17 +69,21 @@ local STAGE_PAD_OFFSETS: { [string]: { x: number, z: number, y: number } } = {
 	Toit = { x = -13, z = 7, y = 14 }, -- upstairs bathroom, near stairs
 }
 
--- Invisible floor fill for upstairs geometry gaps (at scale 1, relative to
--- house pivot).  The authored model's upper floor has a gap in the front-left
--- section where rotated floor tiles don't cover after ScaleTo.  An invisible
--- Part fills it so the player doesn't fall through.
-local UPSTAIRS_FLOOR_FILL = {
-	x = -18.2,
-	z = 12.1,
-	y = -10.3,
-	sizeX = 25,
-	sizeZ = 14,
-}
+-- There used to be an UPSTAIRS_FLOOR_FILL here: an invisible 25 x 14 slab laid
+-- across the opening in the upper floor at x -30.7..-5.7, z 5.1..19.1, on the
+-- theory that the opening was a gap left by ScaleTo and players were falling
+-- through it.
+--
+-- The opening is the stairwell.  It is walled on every side (a 25.8-stud wall
+-- at x ~= -8, another at x ~= -32, balusters along z ~= 7) and the staircase
+-- climbs through it, so nothing was ever falling into it.  What the slab did
+-- do was sit 1.94 studs above the treads it covered -- 0.23 studs of headroom
+-- once HOUSE_SCALE multiplied both -- which sealed the upper half of the
+-- flight. That is the "physics broke when we scaled the model" symptom: the
+-- slab and the stairs scaled together, the character did not.
+--
+-- Nothing replaces it. If a real fall hazard turns up, guard that edge with a
+-- thin vertical part; never lay a floor across the stairwell.
 
 local function part(parent: Instance, name: string, props: { [string]: any }): BasePart
 	local instance = Instance.new("Part")
@@ -158,6 +162,15 @@ local DOOR_TWEEN = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirectio
 local DOOR_DETECT_RANGE = 8 * HOUSE_SCALE
 
 local function setupAutoDoor(doorPart: BasePart)
+	-- _revealStage runs again whenever a stage is re-revealed (a stage already
+	-- owned at build time, then a DevResetHouse rebuild).  A second handler on
+	-- the same door fights the first over one CFrame tween, and the two
+	-- disagree about CanCollide while they do it.
+	if doorPart:GetAttribute("_autoDoor") then
+		return
+	end
+	doorPart:SetAttribute("_autoDoor", true)
+
 	-- Determine door width axis: the axis that is NOT thin and NOT height.
 	local s = doorPart.Size
 	local widthAxis: string
@@ -182,6 +195,10 @@ local function setupAutoDoor(doorPart: BasePart)
 
 	local closedCF = doorPart.CFrame
 	local doorCenter = closedCF.Position
+	-- What "closed" means for THIS door.  Two of the tagged doors are the
+	-- authored glass panels, which are CanCollide = false on purpose; closing
+	-- them back to a hard-coded `true` turned them into solid panes.
+	local solidWhenClosed = doorPart.CanCollide
 	local openCF = closedCF
 		* hingeOffset
 		* CFrame.Angles(0, DOOR_OPEN_ANGLE, 0)
@@ -191,8 +208,15 @@ local function setupAutoDoor(doorPart: BasePart)
 
 	-- Proximity check: every heartbeat, see if any player character is near.
 	local rangeSq = DOOR_DETECT_RANGE * DOOR_DETECT_RANGE
+	-- Vertical window, measured from the door's own threshold rather than from
+	-- its height: the authored doors are ~12 studs tall, which HOUSE_SCALE
+	-- turns into ~18 -- taller than a storey -- so testing against the height
+	-- opened a door for whoever was standing on the floor above it.
+	local threshold = doorCenter.Y - s.Y / 2
+	local storey = 6 * HOUSE_SCALE
 
-	RunService.Heartbeat:Connect(function()
+	local connection: RBXScriptConnection
+	connection = RunService.Heartbeat:Connect(function()
 		if not doorPart.Parent then
 			return
 		end
@@ -203,8 +227,12 @@ local function setupAutoDoor(doorPart: BasePart)
 			local hrp = character and character:FindFirstChild("HumanoidRootPart")
 			if hrp then
 				local delta = hrp.Position - doorCenter
-				local dy = math.abs(delta.Y)
-				if dy <= s.Y and delta.X * delta.X + delta.Z * delta.Z <= rangeSq then
+				local feet = hrp.Position.Y - 3
+				if
+					feet >= threshold - storey
+					and feet <= threshold + storey
+					and delta.X * delta.X + delta.Z * delta.Z <= rangeSq
+				then
 					nearby = true
 					break
 				end
@@ -220,11 +248,17 @@ local function setupAutoDoor(doorPart: BasePart)
 			isOpen = false
 			local tween = TweenService:Create(doorPart, DOOR_TWEEN, { CFrame = closedCF })
 			tween.Completed:Once(function()
-				doorPart.CanCollide = true
+				doorPart.CanCollide = solidWhenClosed
 				doorPart.CanQuery = true
 			end)
 			tween:Play()
 		end
+	end)
+
+	-- Otherwise every rebuild leaks a handler that keeps walking the player
+	-- list, once per door, for the rest of the server's life.
+	doorPart.Destroying:Once(function()
+		connection:Disconnect()
 	end)
 end
 
@@ -236,12 +270,16 @@ end
 local function hideDescendants(folder: Instance)
 	for _, desc in folder:GetDescendants() do
 		if desc:IsA("BasePart") then
-			-- Save the authored CanCollide so showDescendants can restore it.
+			-- Save the authored CanCollide and Transparency so showDescendants
+			-- restores what the model author chose instead of forcing every
+			-- part solid and opaque.
 			desc:SetAttribute("_origCanCollide", desc.CanCollide)
+			desc:SetAttribute("_origTransparency", desc.Transparency)
 			desc.Transparency = 1
 			desc.CanCollide = false
 			desc.CanQuery = false
 		elseif desc:IsA("Decal") or desc:IsA("Texture") then
+			desc:SetAttribute("_origTransparency", desc.Transparency)
 			desc.Transparency = 1
 		elseif
 			desc:IsA("Light")
@@ -251,7 +289,9 @@ local function hideDescendants(folder: Instance)
 			or desc:IsA("ParticleEmitter")
 			or desc:IsA("BaseScript")
 		then
-			(desc :: any).Enabled = false
+			local node = desc :: any
+			desc:SetAttribute("_origEnabled", node.Enabled)
+			node.Enabled = false
 		end
 	end
 end
@@ -259,7 +299,13 @@ end
 local function showDescendants(folder: Instance)
 	for _, desc in folder:GetDescendants() do
 		if desc:IsA("BasePart") then
-			desc.Transparency = 0
+			-- Restore the model author's original Transparency: glass panes and
+			-- window doors are authored semi-transparent, and forcing them to 0
+			-- turned them into solid-looking panels you then walk straight
+			-- through (they are CanCollide = false), which reads as broken
+			-- collision even though nothing is.
+			local origTransparency = desc:GetAttribute("_origTransparency")
+			desc.Transparency = if origTransparency ~= nil then origTransparency else 0
 			desc.CanQuery = true
 			-- Restore the model author's original CanCollide.  Parts that
 			-- were non-collidable in the template stay non-collidable,
@@ -272,7 +318,8 @@ local function showDescendants(folder: Instance)
 				setupAutoDoor(desc)
 			end
 		elseif desc:IsA("Decal") or desc:IsA("Texture") then
-			desc.Transparency = 0
+			local origTransparency = desc:GetAttribute("_origTransparency")
+			desc.Transparency = if origTransparency ~= nil then origTransparency else 0
 		elseif
 			desc:IsA("Light")
 			or desc:IsA("Fire")
@@ -281,7 +328,13 @@ local function showDescendants(folder: Instance)
 			or desc:IsA("ParticleEmitter")
 			or desc:IsA("BaseScript")
 		then
-			(desc :: any).Enabled = true
+			-- Same reasoning as CanCollide: a script the template ships
+			-- disabled stays disabled.  The imported model carries a legacy R6
+			-- launcher (Torso.Velocity = 0,100,0) on a garden slab; forcing
+			-- Enabled = true re-armed it on every reveal.
+			local node = desc :: any
+			local origEnabled = desc:GetAttribute("_origEnabled")
+			node.Enabled = if origEnabled ~= nil then origEnabled else true
 		end
 	end
 end
@@ -382,33 +435,6 @@ function HouseBuilder:build(
 		CFrame.new(plateauCFrame.Position.X, box.Position.Y + offset, plateauCFrame.Position.Z)
 			* CFrame.Angles(0, 0, 0)
 	)
-
-	-- Invisible floor fill for upstairs geometry gap (see UPSTAIRS_FLOOR_FILL).
-	-- Always transparent, always collidable.  At Y ≈ 24 it's far above the
-	-- ground floor so it never interferes with ground-level gameplay.
-	do
-		local pivot = house:GetPivot().Position
-		local fill = Instance.new("Part")
-		fill.Name = "UpstairsFloorFill"
-		fill.Anchored = true
-		fill.Transparency = 1
-		fill.CanCollide = true
-		fill.CanQuery = false
-		fill.CastShadow = false
-		fill.TopSurface = Enum.SurfaceType.Smooth
-		fill.BottomSurface = Enum.SurfaceType.Smooth
-		fill.Size = Vector3.new(
-			UPSTAIRS_FLOOR_FILL.sizeX * HOUSE_SCALE,
-			0.3 * HOUSE_SCALE,
-			UPSTAIRS_FLOOR_FILL.sizeZ * HOUSE_SCALE
-		)
-		fill.CFrame = CFrame.new(
-			pivot.X + UPSTAIRS_FLOOR_FILL.x * HOUSE_SCALE,
-			pivot.Y + UPSTAIRS_FLOOR_FILL.y * HOUSE_SCALE,
-			pivot.Z + UPSTAIRS_FLOOR_FILL.z * HOUSE_SCALE
-		)
-		fill.Parent = house
-	end
 
 	-- Start with all stages hidden
 	for _, folderName in STAGE_FOLDERS do
