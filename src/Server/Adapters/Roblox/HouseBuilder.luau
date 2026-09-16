@@ -65,7 +65,7 @@ local STAGE_PAD_OFFSETS: { [string]: { x: number, z: number, y: number } } = {
 	Salon = { x = 2, z = 23, y = 1 }, -- inside the living room
 	SalleAManger = { x = -40, z = 27, y = 1 }, -- inside the dining room
 	Entree = { x = -3, z = -7, y = 1 }, -- inside the entrance
-	Etage = { x = -8, z = -7, y = 14 }, -- upstairs landing
+	Etage = { x = -8, z = 0, y = 13 }, -- upstairs landing
 	Toit = { x = -10, z = -3, y = 14 }, -- upstairs bathroom, near stairs
 }
 
