@@ -540,7 +540,7 @@ function StationSceneBuilder:claimPlot(userId: number): boolean
 			spawnPart.Enabled = false
 			spawnPart.Neutral = true
 			spawnPart.Transparency = 1
-			spawnPart.CanCollide = false
+			spawnPart.CanCollide = true
 			spawnPart.Parent = folder
 
 			-- Built with the plot, not with the mine: a tycoon pad has to be

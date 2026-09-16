@@ -59,14 +59,14 @@ local PAD_SIZE = 6
 local STAGE_PAD_OFFSETS: { [string]: { x: number, z: number, y: number } } = {
 	Jardin = { x = 0, z = -55, y = 0 }, -- front yard, away from house
 	Fondations = { x = 0, z = 50, y = 0 }, -- behind the house
-	MursExterieurs = { x = 50, z = 0, y = 0 }, -- right of house
-	Garage = { x = 29, z = -40, y = 2 }, -- inside the garage
-	Cuisine = { x = -25, z = 0, y = 2 }, -- inside the kitchen
-	Salon = { x = 2, z = 23, y = 2 }, -- inside the living room
-	SalleAManger = { x = -32, z = 23, y = 2 }, -- inside the dining room
-	Entree = { x = -3, z = -9, y = 2 }, -- inside the entrance
+	MursExterieurs = { x = 5, z = 25, y = 1 }, -- right of house
+	Garage = { x = 29, z = 0, y = 1 }, -- inside the garage
+	Cuisine = { x = -25, z = 0, y = 1 }, -- inside the kitchen
+	Salon = { x = 2, z = 23, y = 1 }, -- inside the living room
+	SalleAManger = { x = -40, z = 27, y = 1 }, -- inside the dining room
+	Entree = { x = -3, z = -7, y = 1 }, -- inside the entrance
 	Etage = { x = -8, z = -7, y = 14 }, -- upstairs landing
-	Toit = { x = -13, z = 7, y = 14 }, -- upstairs bathroom, near stairs
+	Toit = { x = -10, z = -3, y = 14 }, -- upstairs bathroom, near stairs
 }
 
 -- There used to be an UPSTAIRS_FLOOR_FILL here: an invisible 25 x 14 slab laid
