@@ -11,10 +11,9 @@ two files, the docs win.**
 ## Project overview
 
 **Tycoon Orbital** — a Roblox tycoon game where players build orbital stations on a grid, with
-production simulation (power/heat/resources), an onboarding objective chain, and a rebirth
-(prestige) system. The codebase was fully migrated to a hexagonal (ports & adapters) architecture
-under `src/`, synced to Studio via Rojo. The migration is complete — all new work is ordinary
-feature work on top of this architecture.
+production simulation (power/heat/resources), mining/research systems, an onboarding objective
+chain, and a rebirth (prestige) system. The codebase uses a hexagonal (ports & adapters)
+architecture under `src/`, synced to Studio via Rojo.
 
 ## Commands
 
@@ -53,13 +52,16 @@ src/
 │  ├─ Domain/                  Pure rules (tested), one folder per subject
 │  │  ├─ Economy/              Credits
 │  │  ├─ Grid/                 Grid maths
+│  │  ├─ Mining/               AsteroidTiers, Railgun
 │  │  ├─ Objectives/           Onboarding chain + completion checks
 │  │  ├─ Plots/                Plot fan-layout maths
 │  │  ├─ Production/           Orbit sunlight curve, simulation tick
 │  │  ├─ Profile/              Persisted entity + sanitization
 │  │  ├─ Rebirth/              Prestige rules (canRebirth, multiplier)
+│  │  ├─ Research/             Backpack, Drill, MineGrid, OreCatalog,
+│  │  │                        Rarity, ResearchMine, Shovel, Vein
 │  │  ├─ Station/              ModuleCatalog, Placement, Network (BFS)
-│  │  └─ Support/              Result, Format
+│  │  └─ Support/              Result
 │  ├─ Balance.luau             The ONLY source of balancing constants
 │  ├─ Icons.luau               Icon-id lookup table
 │  ├─ Net.luau                 Shared network contract (RemoteFunctions/Events)
@@ -75,7 +77,10 @@ src/
 │  │  ├─ Persistence/          DataStoreProfileRepository, InMemoryProfileRepository,
 │  │  │                        InMemoryStationRepository
 │  │  ├─ Replication/          AttributeStatsPublisher, RemoteNotifier
-│  │  └─ Roblox/               StationSceneBuilder, CharacterTeleporter, SystemClock
+│  │  └─ Roblox/               StationSceneBuilder, HouseBuilder,
+│  │                           ResearchMineBuilder, RailgunKioskBuilder,
+│  │                           AsteroidFieldRenderer, CharacterTeleporter,
+│  │                           HumanoidMovementActuator, SystemClock
 │  ├─ Composition/
 │  │  ├─ Container.luau        The ONLY assembly point
 │  │  ├─ RemoteBindings.luau   Result→tuple, Player→userId
@@ -84,9 +89,11 @@ src/
 └─ Client/                     → StarterPlayerScripts.Client
    ├─ State.luau               Reads replicated attributes + Net.Notify → Signal
    ├─ Controllers/             HudController, BuildController, ObjectiveController,
-   │                           LabelController, DevController
+   │                           LabelController, DevController, EffectsController,
+   │                           ResearchController, MiningController
    ├─ UI/                      Theme, BuildPanel, DevPanel, GainFeed,
-   │                           MissionComplete, ModuleVisuals
+   │                           MissionComplete, ModuleVisuals, ResearchPanel,
+   │                           WeaponSelector
    └─ Bootstrap.client.luau    Entry-point LocalScript
 ```
 
@@ -98,8 +105,9 @@ Don't recreate `Shared/Config/`.
 Declared in `Application/Ports.luau`, each implemented once for production and once as a test
 double (`tests/fakes.luau`):
 
-`ProfileRepository`, `StationRepository`, `StatsPublisher`, `Notifier`, `SceneBuilder`,
-`Teleporter`, `Clock` (two clocks: absolute epoch + monotonic session).
+`ProfileRepository`, `StationRepository`, `StatsPublisher`, `Notifier`, `MovementActuator`,
+`Teleporter`, `PassGateway`/`Marketplace`, `SceneBuilder`,
+`Clock` (two clocks: absolute epoch + monotonic session).
 
 `InMemoryStationRepository` is the **real production adapter**, not just a test fake — station
 grid data was always session-only (only `profile.modules` survives disconnection).
@@ -110,8 +118,8 @@ grid data was always session-only (only `profile.modules` survives disconnection
 - Dependencies cloned per use case (`setmetatable(table.clone(deps), UseCase)`)
 - Config passed as argument (tests pass their own fixtures)
 - `container.development` flag (from `RunService:IsStudio()`) gates dev-only use cases
-- Dev use cases (`devSetPass`, `devSetRebirths`, `devSetUnlimitedMoney`, `devResetAll`,
-  `devGiveCredits`) only exist when `development = true`
+- Dev use cases (`DevSetPass`, `DevSetRebirths`, `DevSetUnlimitedMoney`, `DevResetAll`,
+  `DevGiveOres`, `DevSetWalkSpeed`, `DevResetHouse`) only exist when `development = true`
 
 ## Critical rules and pitfalls
 
